@@ -11,9 +11,9 @@ class PendingScreen extends StatefulWidget {
 }
 
 class _PendingScreenState extends State<PendingScreen> {
-  String? _selectedHospital;
+  String? _selectedHospitalId;
   bool _isLoading = false;
-  List<String> _hospitals = []; // Hospital names
+  List<Map<String, dynamic>> _hospitals = []; // Use list of maps for backend data
 
   @override
   void initState() {
@@ -22,30 +22,36 @@ class _PendingScreenState extends State<PendingScreen> {
   }
 
   Future<void> _fetchHospitals() async {
-    // Fetch hospitals from backend
-    final hospitals = await ApiService.getHospitals();
-    setState(() {
-      _hospitals = hospitals;
-    });
+    try {
+      final hospitals = await ApiService.getHospitals();
+      setState(() {
+        // Convert to List<Map<String, dynamic>>
+        _hospitals = List<Map<String, dynamic>>.from(hospitals);
+      });
+    } catch (e) {
+      print('Error fetching hospitals: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to load hospitals'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _requestVerification() async {
-    if (_selectedHospital == null) {
+    if (_selectedHospitalId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a hospital')),
       );
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
-    final result = await ApiService.requestVerification(_selectedHospital!);
+    final result = await ApiService.requestVerification(_selectedHospitalId!);
 
-    setState(() {
-      _isLoading = false;
-    });
+    setState(() => _isLoading = false);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -106,17 +112,17 @@ class _PendingScreenState extends State<PendingScreen> {
             _hospitals.isEmpty
                 ? const CircularProgressIndicator()
                 : DropdownButtonFormField<String>(
-              value: _selectedHospital,
+              value: _selectedHospitalId,
               hint: const Text('Select Hospital'),
               items: _hospitals.map((hospital) {
-                return DropdownMenuItem(
-                  value: hospital,
-                  child: Text(hospital),
+                return DropdownMenuItem<String>(
+                  value: hospital['_id'], // send ID to backend
+                  child: Text(hospital['name']),
                 );
               }).toList(),
               onChanged: (value) {
                 setState(() {
-                  _selectedHospital = value;
+                  _selectedHospitalId = value;
                 });
               },
             ),

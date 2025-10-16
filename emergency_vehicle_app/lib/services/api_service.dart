@@ -5,53 +5,89 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   static const String _baseUrl = "http://192.168.0.128:5000/api/v1/auth";
   // Fetch hospital names
-  static Future<List<String>> getHospitals() async {
-    final url = Uri.parse('http://192.168.0.128:5000/api/v1/hospitals');
+
+
+
+
+  // Fetch hospitals
+  static Future<List<dynamic>> getHospitals() async {
+    final url = Uri.parse("http://192.168.0.128:5000/api/v1/hospitals");
+
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return List<String>.from(data.map((h) => h['name']));
+        return data['hospitals'] ?? [];
+      } else {
+        return [];
       }
-      return [];
     } catch (e) {
       print('Error fetching hospitals: $e');
       return [];
     }
   }
 
-// Request verification for selected hospital
-  // Login method
-  static Future<Map<String, dynamic>> login(String email, String password) async {
-    final url = Uri.parse('$_baseUrl/login');
+// Register user
+  static Future<Map<String, dynamic>> register(
+      String name,
+      String email,
+      String password,
+      String vehicleId,
+      String hospitalId,
+      ) async {
+    final url = Uri.parse('http://192.168.0.128:5000/api/v1/auth/register');
+
     try {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({
+          'name': name,
+          'email': email,
+          'password': password,
+          'vehicleId': vehicleId,
+          'hospitalId': hospitalId,
+        }),
       );
 
       final responseBody = jsonDecode(response.body);
 
-      if (response.statusCode == 200 && responseBody['success'] == true) {
-        final token = responseBody['token'];
+      return {
+        'success': response.statusCode == 201,
+        'message': responseBody['message'] ?? 'Registration failed',
+      };
+    } catch (e) {
+      print('Error during registration: $e');
+      return {'success': false, 'message': 'Could not connect to server'};
+    }
+  }
+
+
+// Request verification for selected hospital
+  // Login method
+  static Future<Map<String, dynamic>> login(String email, String password) async {
+    final url = Uri.parse('http://192.168.0.128:5000/api/v1/auth/login');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      final body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && body['success'] == true) {
+        final token = body['token'];
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('jwt_token', token);
 
-        return {
-          'success': true,
-          'message': 'Login Successful',
-          'token': token
-        };
+        return {'success': true, 'token': token};
       } else {
-        return {
-          'success': false,
-          'message': responseBody['message'] ?? 'An unknown error occurred'
-        };
+        return {'success': false, 'message': body['message'] ?? 'Login failed'};
       }
     } catch (e) {
-      print('Error during login: $e');
-      return {'success': false, 'message': 'Could not connect to the server.'};
+      return {'success': false, 'message': 'Server error: $e'};
     }
   }
 

@@ -1,41 +1,42 @@
 // src/controllers/hospitalController.js
-
-// Temporary in-memory storage
-let hospitals = [];
+const Hospital = require('../models/hospital');
 
 // Add multiple hospitals at once
-exports.addHospitals = (req, res) => {
-    const newHospitals = req.body.hospitals; // Expect an array of hospitals
+exports.addHospitals = async (req, res) => {
+    try {
+        const newHospitals = req.body.hospitals; // Expect an array of hospitals
 
-    if (!newHospitals || !Array.isArray(newHospitals) || newHospitals.length === 0) {
-        return res.status(400).json({ message: "Provide an array of hospitals" });
-    }
-
-    const addedHospitals = newHospitals.map((hospital, index) => {
-        const { name, address, phone } = hospital;
-
-        if (!name || !address || !phone) {
-            throw new Error(`Hospital at index ${index} is missing required fields`);
+        if (!newHospitals || !Array.isArray(newHospitals) || newHospitals.length === 0) {
+            return res.status(400).json({ message: "Provide an array of hospitals" });
         }
 
-        const newHospital = {
-            id: hospitals.length + 1,
-            name,
-            address,
-            phone
-        };
+        // Validate and insert hospitals into MongoDB
+        const addedHospitals = await Hospital.insertMany(
+            newHospitals.map(h => ({
+                name: h.name,
+                location: h.location || h.address, // adjust if frontend sends 'address'
+                contactNumber: h.phone || h.contactNumber
+            }))
+        );
 
-        hospitals.push(newHospital);
-        return newHospital;
-    });
+        res.status(201).json({
+            message: `${addedHospitals.length} hospitals added successfully`,
+            hospitals: addedHospitals
+        });
 
-    res.status(201).json({
-        message: `${addedHospitals.length} hospitals added successfully`,
-        hospitals: addedHospitals
-    });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
 };
 
 // Get all hospitals
-exports.getHospitals = (req, res) => {
-    res.status(200).json({ hospitals });
+exports.getHospitals = async (req, res) => {
+    try {
+        const hospitals = await Hospital.find(); // Fetch from MongoDB
+        res.status(200).json({ success: true, hospitals });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
 };
