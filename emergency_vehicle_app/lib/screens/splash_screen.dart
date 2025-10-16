@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
-
 import '../models/user.dart';
 import 'login_screen.dart';
 import 'map_screen.dart';
