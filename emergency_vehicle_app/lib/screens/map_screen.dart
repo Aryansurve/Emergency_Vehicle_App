@@ -75,11 +75,11 @@
 //   }
 // }
 
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
@@ -101,7 +101,9 @@ class _MapScreenState extends State<MapScreen> {
   Set<Polyline> _polylines = {};
   LatLng? _sourceLocation;
   LatLng? _destinationLocation;
+  LatLng? _currentPosition;
   bool _isLoading = false;
+  bool _isGettingLocation = false;
   String? _errorMessage;
   String? _distance;
   String? _duration;
@@ -116,11 +118,136 @@ class _MapScreenState extends State<MapScreen> {
   static const String _googleApiKey = 'AIzaSyCEZnD1f1rKoClsuqTCadrURkI75Z9VPVk';
 
   @override
+  void initState() {
+    super.initState();
+    _checkLocationPermission();
+  }
+
+  @override
   void dispose() {
     _sourceController.dispose();
     _destinationController.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  // Check and request location permission
+  Future<void> _checkLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Check if location services are enabled
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      setState(() {
+        _errorMessage = 'Location services are disabled. Please enable them.';
+      });
+      return;
+    }
+
+    // Check location permission
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _errorMessage = 'Location permissions are denied';
+        });
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      setState(() {
+        _errorMessage = 'Location permissions are permanently denied';
+      });
+      return;
+    }
+  }
+
+  // Get current location using GPS
+  Future<void> _getCurrentLocation() async {
+    setState(() {
+      _isGettingLocation = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Check permission first
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          throw Exception('Location permission denied');
+        }
+      }
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      _currentPosition = LatLng(position.latitude, position.longitude);
+
+      // Get address from coordinates (reverse geocoding)
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        String address = '';
+
+        if (place.street != null && place.street!.isNotEmpty) {
+          address += place.street!;
+        }
+        if (place.subLocality != null && place.subLocality!.isNotEmpty) {
+          address += address.isEmpty ? place.subLocality! : ', ${place.subLocality!}';
+        }
+        if (place.locality != null && place.locality!.isNotEmpty) {
+          address += address.isEmpty ? place.locality! : ', ${place.locality!}';
+        }
+        if (place.administrativeArea != null && place.administrativeArea!.isNotEmpty) {
+          address += address.isEmpty ? place.administrativeArea! : ', ${place.administrativeArea!}';
+        }
+
+        setState(() {
+          _sourceController.text = address.isEmpty ?
+          '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}' :
+          address;
+          _sourceLocation = _currentPosition;
+        });
+
+        // Move camera to current location
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(_currentPosition!, 15),
+        );
+
+        // Add marker for current location
+        setState(() {
+          _markers.removeWhere((marker) => marker.markerId.value == 'current');
+          _markers.add(
+            Marker(
+              markerId: const MarkerId('current'),
+              position: _currentPosition!,
+              infoWindow: const InfoWindow(title: 'Current Location'),
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+            ),
+          );
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error getting location: ${e.toString()}';
+      });
+    } finally {
+      setState(() {
+        _isGettingLocation = false;
+      });
+    }
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -153,9 +280,12 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     try {
-      // Geocode source address
-      List<Location> sourceLocations = await locationFromAddress(_sourceController.text);
-      _sourceLocation = LatLng(sourceLocations[0].latitude, sourceLocations[0].longitude);
+      // If source location is already set (from GPS), use it
+      if (_sourceLocation == null) {
+        // Geocode source address
+        List<Location> sourceLocations = await locationFromAddress(_sourceController.text);
+        _sourceLocation = LatLng(sourceLocations[0].latitude, sourceLocations[0].longitude);
+      }
 
       // Geocode destination address
       List<Location> destLocations = await locationFromAddress(_destinationController.text);
@@ -368,16 +498,39 @@ class _MapScreenState extends State<MapScreen> {
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
-                TextField(
-                  controller: _sourceController,
-                  decoration: InputDecoration(
-                    labelText: 'Source',
-                    hintText: 'Enter source location',
-                    prefixIcon: const Icon(Icons.location_on, color: Colors.green),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _sourceController,
+                        decoration: InputDecoration(
+                          labelText: 'Source',
+                          hintText: 'Enter source location',
+                          prefixIcon: const Icon(Icons.location_on, color: Colors.green),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _isGettingLocation ? null : _getCurrentLocation,
+                      icon: _isGettingLocation
+                          ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                          : const Icon(Icons.my_location),
+                      tooltip: 'Use current location',
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.all(12),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 TextField(
