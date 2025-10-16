@@ -1,5 +1,6 @@
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // @desc    Register a new user (Driver)
 // @route   POST /api/v1/auth/register
@@ -56,15 +57,14 @@ exports.registerAdmin = async (req, res) => {
       return res.status(400).json({ message: 'Admin already exists' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
     const admin = new User({
-      name,
-      email,
-      password: hashedPassword,
-      role: 'Admin',
-      verificationStatus: 'Verified' // Admins are verified by default
-    });
+  name,
+  email,
+  password, // plain password — pre-save hook will handle hashing
+  role: 'Admin',
+  verificationStatus: 'Verified'
+});
+
 
     await admin.save();
     res.status(201).json({ message: 'Admin registered successfully', admin });
@@ -77,31 +77,55 @@ exports.registerAdmin = async (req, res) => {
 // @route   POST /api/v1/auth/login
 // @access  Public
 exports.login = async (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    try {
-        if (!email || !password) {
-            return res.status(400).json({ success: false, message: 'Please provide an email and password' });
-        }
-
-        const user = await User.findOne({ email }).select('+password');
-
-        if (!user || !(await user.matchPassword(password))) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
-        }
-
-        if (user.verificationStatus !== 'Verified') {
-            return res.status(403).json({
-                success: false,
-                message: `Your account is ${user.verificationStatus}. Please wait for admin approval.`,
-            });
-        }
-
-        sendTokenResponse(user, 200, res);
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+  try {
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Please provide an email and password' });
     }
+
+    // Find the user and explicitly select the password field
+    const user = await User.findOne({ email }).select('+password');
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials - user not found' });
+    }
+
+    // Compare entered password with hashed password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials - wrong password' });
+    }
+
+    // Only block Rejected users
+    if (user.verificationStatus === 'Rejected') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been rejected by admin.',
+      });
+    }
+
+    // Generate token
+    const payload = {
+      id: user._id,
+      role: user.role,
+      verificationStatus: user.verificationStatus,
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRE || '7d',
+    });
+
+    res.status(200).json({
+      success: true,
+      token,
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+  }
 };
+
 
 // Helper function to create, sign, and send the JWT
 const sendTokenResponse = (user, statusCode, res) => {

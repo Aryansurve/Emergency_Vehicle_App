@@ -3,14 +3,19 @@ const mongoose = require('mongoose');
 const hospitalSchema = new mongoose.Schema({
     name: {
         type: String,
-        required: true,
+        required: [true, 'Please provide a hospital name'],
         unique: true,
     },
     location: {
         type: String,
-        required: true,
+        required: [true, 'Please provide a location'],
     },
+    contactNumber: {
+        type: String,
+        required: [true, 'Please provide a contact number'],
+    }
+}, {
+    timestamps: true
 });
 
-const Hospital = mongoose.model('Hospital', hospitalSchema);
-module.exports = Hospital;
+module.exports = mongoose.model('Hospital', hospitalSchema);

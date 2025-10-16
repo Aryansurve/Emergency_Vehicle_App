@@ -32,29 +32,33 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (token != null) {
       try {
-        // We have a token, decode it to find out the user's status
         final user = User.fromToken(token);
 
         if (user.verificationStatus == 'Verified') {
-          // User is verified, go to the main map screen
+          // User is verified, go to MapScreen
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const MapScreen()),
           );
-        } else {
-          // User is 'Pending' or 'Rejected', go to the pending screen
+        } else if (user.verificationStatus == 'Pending') {
+          // User is pending verification
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const PendingScreen()),
           );
+        } else {
+          // User is rejected or unknown status → force login
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
         }
       } catch (e) {
-        // Token is invalid or expired, go to login
+        // Token is invalid or expired → go to login
         print('Token decoding error: $e');
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
         );
       }
     } else {
-      // No token found, user needs to log in
+      // No token found → go to login
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
