@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "387663444079",
+    "project_id": "emergencyapp-ceb6f",
+    "storage_bucket": "emergencyapp-ceb6f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:387663444079:android:0d8151c7ffbf141df9359a",
+        "android_client_info": {
+          "package_name": "com.example.emergency_vehicle_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnq-1-h8hPW7k_KqT3k10lz6QxdGHs4Ds"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
