@@ -83,6 +83,7 @@ exports.login = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Please provide an email and password' });
     }
+    console.log({email, password});
 
     // Find the user and explicitly select the password field
     const user = await User.findOne({ email }).select('+password');

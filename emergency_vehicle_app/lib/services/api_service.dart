@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String _baseUrl = "http://192.168.0.128:5000/api/v1/auth";
+  static const String _baseUrl = "http://192.168.0.100:5000/api/v1/auth";
   // Fetch hospital names
 
 
@@ -11,7 +11,7 @@ class ApiService {
 
   // Fetch hospitals
   static Future<List<dynamic>> getHospitals() async {
-    final url = Uri.parse("http://192.168.0.128:5000/api/v1/hospitals");
+    final url = Uri.parse("http://192.168.0.100:5000/api/v1/hospitals");
 
     try {
       final response = await http.get(url);
@@ -35,7 +35,7 @@ class ApiService {
       String vehicleId,
       String hospitalId,
       ) async {
-    final url = Uri.parse('http://192.168.0.128:5000/api/v1/auth/register');
+    final url = Uri.parse('http://192.168.0.100:5000/api/v1/auth/register');
 
     try {
       final response = await http.post(
@@ -66,7 +66,7 @@ class ApiService {
 // Request verification for selected hospital
   // Login method
   static Future<Map<String, dynamic>> login(String email, String password) async {
-    final url = Uri.parse('http://192.168.0.128:5000/api/v1/auth/login');
+    final url = Uri.parse('http://192.168.0.100:5000/api/v1/auth/login');
 
     try {
       final response = await http.post(
@@ -96,7 +96,7 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt_token');
 
-    final url = Uri.parse("http://192.168.0.128:5000/api/v1/hospitals/request");
+    final url = Uri.parse("http://192.168.0.100:5000/api/v1/hospitals/request");
     try {
       final response = await http.post(
         url,
