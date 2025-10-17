@@ -1,5 +1,5 @@
 // src/controllers/hospitalController.js
-const Hospital = require('../models/hospital');
+const Hospital = require('../models/hospitalModel');
 
 // Add multiple hospitals at once
 exports.addHospitals = async (req, res) => {

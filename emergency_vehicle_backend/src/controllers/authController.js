@@ -1,10 +1,7 @@
-const User = require('../models/user');
+const User = require('../models/userModel');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// @desc    Register a new user (Driver)
-// @route   POST /api/v1/auth/register
-// @access  Private (Requires Admin role)
 exports.register = async (req, res) => {
     const { name, email, password, vehicleId, hospitalId } = req.body;
 
@@ -15,7 +12,6 @@ exports.register = async (req, res) => {
             return res.status(400).json({ success: false, message: 'User already exists' });
         }
 
-        // The user model's 'pre-save' hook will automatically hash the password
         const user = await User.create({
             name,
             email,
@@ -44,9 +40,8 @@ exports.register = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };
-// @desc    Register a new Admin (TEMPORARY SETUP)
-// @route   POST /api/v1/auth/register-admin
-// @access  Public (Use once, then disable)
+
+
 exports.registerAdmin = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -73,9 +68,7 @@ exports.registerAdmin = async (req, res) => {
   }
 };
 
-// @desc    Login user & get token
-// @route   POST /api/v1/auth/login
-// @access  Public
+
 exports.login = async (req, res) => {
   const { email, password } = req.body;
 

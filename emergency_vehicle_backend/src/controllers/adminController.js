@@ -1,8 +1,5 @@
-const User = require('../models/user');
+const User = require('../models/userModel');
 
-// @desc    Get all pending users for verification
-// @route   GET /api/v1/admin/pending
-// @access  Private (Admin)
 exports.getPendingUsers = async (req, res) => {
     try {
         const pendingUsers = await User.find({ verificationStatus: 'Pending' }).populate('hospitalId', 'name location');
@@ -12,9 +9,6 @@ exports.getPendingUsers = async (req, res) => {
     }
 };
 
-// @desc    Verify a driver
-// @route   PUT /api/v1/admin/verify/:id
-// @access  Private (Admin)
 exports.verifyUser = async (req, res) => {
     try {
         const user = await User.findById(req.params.id);
@@ -28,9 +22,6 @@ exports.verifyUser = async (req, res) => {
     }
 };
 
-// @desc    Reject a driver
-// @route   PUT /api/v1/admin/reject/:id
-// @access  Private (Admin)
 exports.rejectUser = async (req, res) => {
     try {
         const user = await User.findById(req.params.id);

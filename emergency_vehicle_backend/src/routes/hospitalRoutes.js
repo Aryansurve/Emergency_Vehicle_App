@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { addHospitals, getHospitals } = require('../controllers/hospitalController');
 const { protect } = require('../middleware/authMiddleware');
-const User = require('../models/user');
-const Hospital = require('../models/hospital');
+const User = require('../models/userModel');
+const Hospital = require('../models/hospitalModel');
 // Add multiple hospitals
 router.post('/add-multiple', addHospitals);
 
