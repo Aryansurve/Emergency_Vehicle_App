@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-// This schema defines the structure for all users in the application.
 const userSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -20,40 +19,61 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Please provide a password'],
         minlength: 6,
-        select: false, // Prevents password from being returned in queries by default
+        select: false,
     },
     role: {
         type: String,
-        enum: ['Driver', 'Admin'],
-        default: 'Driver',
+        // UPDATED: Added HospitalAdmin and PublicUser roles
+        enum: ['Driver', 'Admin', 'HospitalAdmin', 'PublicUser'],
+        default: 'PublicUser', // Default new signups to PublicUser
     },
     vehicleId: {
         type: String,
-        // This is only required for users with the 'Driver' role
+        // Only required for users with the 'Driver' role
         required: function() { return this.role === 'Driver'; }
     },
     hospitalId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Hospital', // Links this driver to a specific Hospital document
-        required: function() { return this.role === 'Driver'; }
+        ref: 'Hospital',
+        // Required for Drivers and HospitalAdmins to link them to their organization
+        required: function() { return this.role === 'Driver' || this.role === 'HospitalAdmin'; }
     },
     verificationStatus: {
         type: String,
-        enum: ['Pending', 'Verified', 'Rejected'],
-        default: 'Pending',
+        // UPDATED: More specific statuses for the multi-step verification process
+        enum: ['Not Applicable', 'Pending Hospital Approval', 'Pending Platform Approval', 'Verified', 'Rejected'],
+        default: 'Not Applicable', // Default for PublicUsers or Admins
+    },
+    driverStatus: {
+    type: String,
+    enum: ['Available', 'En Route', 'Busy', 'Offline'],
+    default: 'Offline',
+    // Only relevant for users with the 'Driver' role
+    required: function() { return this.role === 'Driver'; }
+    },
+    // NEW: Field to store the reason for rejection
+    rejectionReason: {
+        type: String,
+        default: null
+    },
+    // NEW: Fields for auditing who verified the user
+    verifiedByHospitalAdmin: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    verifiedByPlatformAdmin: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     }
 }, {
-    timestamps: true // Adds createdAt and updatedAt timestamps automatically
+    timestamps: true
 });
 
-// Middleware (Hook): Hash password before saving the user document 🔑
+// Middleware (Hook): Hash password before saving the user document
 userSchema.pre('save', async function (next) {
-    // Only hash the password if it has been modified (or is new)
     if (!this.isModified('password')) {
         return next();
     }
-
-    // Generate a salt and hash the password
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
     next();

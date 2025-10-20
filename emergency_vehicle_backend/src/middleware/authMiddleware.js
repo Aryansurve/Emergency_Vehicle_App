@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
-
+const redisClient = require('../config/redis'); // <-- IMPORT REDIS CLIENT
 // Protect routes
 exports.protect = async (req, res, next) => {
     let token;

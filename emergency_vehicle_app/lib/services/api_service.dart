@@ -1,152 +1,16 @@
-// import 'dart:convert';
-// import 'package:http/http.dart' as http;
-// import 'package:shared_preferences/shared_preferences.dart';
-//
-// class ApiService {
-//   static const String _baseUrl = "http://192.168.0.127:5000/api/v1/auth";
-//   // Fetch hospital names
-//
-//
-//
-//
-//   // Fetch hospitals
-//   static Future<List<dynamic>> getHospitals() async {
-//     final url = Uri.parse("http://192.168.0.127:5000/api/v1/hospitals");
-//
-//     try {
-//       final response = await http.get(url);
-//       if (response.statusCode == 200) {
-//         final data = jsonDecode(response.body);
-//         return data['hospitals'] ?? [];
-//       } else {
-//         return [];
-//       }
-//     } catch (e) {
-//       print('Error fetching hospitals: $e');
-//       return [];
-//     }
-//   }
-//
-// // Register user
-//   static Future<Map<String, dynamic>> register(
-//       String name,
-//       String email,
-//       String password,
-//       String vehicleId,
-//       String hospitalId,
-//       ) async {
-//     final url = Uri.parse('http://192.168.0.127:5000/api/v1/auth/register');
-//
-//     try {
-//       final response = await http.post(
-//         url,
-//         headers: {'Content-Type': 'application/json; charset=UTF-8'},
-//         body: jsonEncode({
-//           'name': name,
-//           'email': email,
-//           'password': password,
-//           'vehicleId': vehicleId,
-//           'hospitalId': hospitalId,
-//         }),
-//       );
-//
-//       final responseBody = jsonDecode(response.body);
-//
-//       return {
-//         'success': response.statusCode == 201,
-//         'message': responseBody['message'] ?? 'Registration failed',
-//       };
-//     } catch (e) {
-//       print('Error during registration: $e');
-//       return {'success': false, 'message': 'Could not connect to server'};
-//     }
-//   }
-//
-//
-// // Request verification for selected hospital
-//   // Login method
-//   static Future<Map<String, dynamic>> login(String email, String password) async {
-//     final url = Uri.parse('http://192.168.0.127:5000/api/v1/auth/login');
-//
-//     try {
-//       final response = await http.post(
-//         url,
-//         headers: {'Content-Type': 'application/json'},
-//         body: jsonEncode({'email': email, 'password': password}),
-//       );
-//
-//       final body = jsonDecode(response.body);
-//
-//       if (response.statusCode == 200 && body['success'] == true) {
-//         final token = body['token'];
-//         final prefs = await SharedPreferences.getInstance();
-//         await prefs.setString('jwt_token', token);
-//
-//         return {'success': true, 'token': token};
-//       } else {
-//         return {'success': false, 'message': body['message'] ?? 'Login failed'};
-//       }
-//     } catch (e) {
-//       return {'success': false, 'message': 'Server error: $e'};
-//     }
-//   }
-//
-//   // Request verification (select hospital)
-//   static Future<Map<String, dynamic>> requestVerification(String hospitalId) async {
-//     final prefs = await SharedPreferences.getInstance();
-//     final token = prefs.getString('jwt_token');
-//
-//     final url = Uri.parse("http://192.168.0.127:5000/api/v1/hospitals/request");
-//     try {
-//       final response = await http.post(
-//         url,
-//         headers: {
-//           'Content-Type': 'application/json',
-//           'Authorization': 'Bearer $token'
-//         },
-//         body: jsonEncode({'hospitalId': hospitalId}),
-//       );
-//
-//       final responseBody = jsonDecode(response.body);
-//
-//       if (response.statusCode == 200 && responseBody['success'] == true) {
-//         return {'success': true, 'message': responseBody['message']};
-//       } else {
-//         return {'success': false, 'message': responseBody['message'] ?? 'Failed to request verification'};
-//       }
-//     } catch (e) {
-//       print('Error requesting verification: $e');
-//       return {'success': false, 'message': 'Could not connect to server.'};
-//     }
-//   }
-// }
-
-
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // Base URL configuration
-  static const String _baseUrl = "https://emergency-vehicle-app.onrender.com/api/v1";
-  //static const String _baseUrl = "http://192.168.0.127:5000/api/v1";
+  // --- CONFIGURATION ---
+  static const String _baseUrl = "http://192.168.0.127:5000/api/v1";
 
+  // --- HELPER METHODS ---
+  static Uri _buildUri(String path) => Uri.parse(_baseUrl + path);
 
-  // API Endpoints
-  static const String _authRegister = "/auth/register";
-  static const String _authLogin = "/auth/login";
-  static const String _hospitalsGet = "/hospitals";
-  static const String _hospitalsRequest = "/hospitals/request";
-
-  // Helper method to build complete URL
-  static String _buildUrl(String endpoint) {
-    return _baseUrl + endpoint;
-  }
-
-  // Helper method to get headers with authorization
   static Future<Map<String, String>> _getHeaders({bool needsAuth = false}) async {
     final headers = {'Content-Type': 'application/json; charset=UTF-8'};
-
     if (needsAuth) {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('jwt_token');
@@ -154,119 +18,327 @@ class ApiService {
         headers['Authorization'] = 'Bearer $token';
       }
     }
-
     return headers;
   }
 
-  // Fetch hospitals
-  static Future<List<dynamic>> getHospitals() async {
-    final url = Uri.parse(_buildUrl(_hospitalsGet));
-
+  // --- AUTH ENDPOINTS ---
+  static Future<Map<String, dynamic>> login(String email, String password) async {
     try {
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['hospitals'] ?? [];
-      } else {
-        print('Error: Server returned ${response.statusCode}');
-        return [];
+      final response = await http.post(
+        _buildUri('/auth/login'),
+        headers: await _getHeaders(),
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+      final body = jsonDecode(response.body);
+      if (response.statusCode == 200 && body['success'] == true) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('jwt_token', body['token']);
+        return {'success': true};
       }
+      return {'success': false, 'message': body['message'] ?? 'Login failed'};
     } catch (e) {
-      print('Error fetching hospitals: $e');
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  // NEW: Separate registration for drivers
+  static Future<Map<String, dynamic>> registerDriver(Map<String, String> data) async {
+    try {
+      final response = await http.post(
+        _buildUri('/auth/register/driver'),
+        headers: await _getHeaders(),
+        body: jsonEncode(data),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  // NEW: Separate registration for public users
+  static Future<Map<String, dynamic>> registerPublicUser(Map<String, String> data) async {
+    try {
+      final response = await http.post(
+        _buildUri('/auth/register/user'),
+        headers: await _getHeaders(),
+        body: jsonEncode(data),
+      );
+      final body = jsonDecode(response.body);
+      // Auto-login the public user after registration
+      if (body['success'] == true && body['token'] != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('jwt_token', body['token']);
+      }
+      return body;
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  // --- PUBLIC/GENERAL ENDPOINTS ---
+  static Future<List<dynamic>> getHospitals() async {
+    try {
+      final response = await http.get(_buildUri('/hospitals'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['hospitals'] ?? [];
+      }
+      return [];
+    } catch (e) {
       return [];
     }
   }
 
-  // Register user
-  static Future<Map<String, dynamic>> register(
-      String name,
-      String email,
-      String password,
-      String vehicleId,
-      String hospitalId,
-      ) async {
-    final url = Uri.parse(_buildUrl(_authRegister));
-    final headers = await _getHeaders();
-
+  // --- HOSPITAL ADMIN ENDPOINTS ---
+  static Future<List<dynamic>> getPendingDriversForHospital() async {
     try {
-      final response = await http.post(
-        url,
-        headers: headers,
+      final response = await http.get(
+        _buildUri('/hospital-admin/pending-drivers'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['data'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> approveDriverByHospital(String driverId) async {
+    try {
+      final response = await http.put(
+        _buildUri('/hospital-admin/approve/$driverId'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> rejectDriverByHospital(String driverId, String reason) async {
+    try {
+      final response = await http.put(
+        _buildUri('/hospital-admin/reject/$driverId'),
+        headers: await _getHeaders(needsAuth: true),
+        body: jsonEncode({'reason': reason}),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  // --- PLATFORM ADMIN ENDPOINTS ---
+  static Future<List<dynamic>> getPendingDriversForPlatform() async {
+    try {
+      final response = await http.get(
+        _buildUri('/admin/pending-users'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['data'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> verifyUserByPlatform(String userId) async {
+    try {
+      final response = await http.put(
+        _buildUri('/admin/verify/$userId'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  // --- NEW LOGOUT METHOD ---
+  static Future<void> logout() async {
+    try {
+      // Tell the server to blacklist the token. We don't need to handle the response
+      // because we are logging out regardless of whether the server call succeeds.
+      await http.post(
+        _buildUri('/auth/logout'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+    } catch (e) {
+      // Log the error but don't prevent the user from logging out
+      print('Error during server-side logout: $e');
+    } finally {
+      // ALWAYS clear the local token and log the user out
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('jwt_token');
+    }
+  }
+
+  // --- NEW DISPATCH ENDPOINTS (for Platform Admin) ---
+
+  static Future<List<dynamic>> getUnassignedEmergencies() async {
+    try {
+      final response = await http.get(
+        _buildUri('/admin/emergencies/unassigned'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['data'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching unassigned emergencies: $e');
+      return [];
+    }
+  }
+
+  static Future<List<dynamic>> getAvailableDrivers() async {
+    try {
+      final response = await http.get(
+        _buildUri('/admin/drivers/available'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['data'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching available drivers: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> assignEmergency(String emergencyId, String driverId) async {
+    try {
+      final response = await http.put(
+        _buildUri('/admin/emergencies/assign'),
+        headers: await _getHeaders(needsAuth: true),
         body: jsonEncode({
-          'name': name,
-          'email': email,
-          'password': password,
-          'vehicleId': vehicleId,
-          'hospitalId': hospitalId,
+          'emergencyId': emergencyId,
+          'driverId': driverId,
         }),
       );
-
-      final responseBody = jsonDecode(response.body);
-
-      return {
-        'success': response.statusCode == 201,
-        'message': responseBody['message'] ?? 'Registration failed',
-      };
+      return jsonDecode(response.body);
     } catch (e) {
-      print('Error during registration: $e');
-      return {'success': false, 'message': 'Could not connect to server'};
+      return {'success': false, 'message': 'Server connection failed: $e'};
     }
   }
 
-  // Login method
-  static Future<Map<String, dynamic>> login(String email, String password) async {
-    final url = Uri.parse(_buildUrl(_authLogin));
-    final headers = await _getHeaders();
+  // --- NEW DRIVER-SPECIFIC ENDPOINTS ---
 
+  static Future<Map<String, dynamic>> getDriverStatus() async {
     try {
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: jsonEncode({'email': email, 'password': password}),
+      final response = await http.get(
+        _buildUri('/driver/status'),
+        headers: await _getHeaders(needsAuth: true),
       );
-
-      final body = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && body['success'] == true) {
-        final token = body['token'];
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('jwt_token', token);
-
-        return {'success': true, 'token': token};
-      } else {
-        return {'success': false, 'message': body['message'] ?? 'Login failed'};
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
       }
+      return {'success': false, 'message': 'Failed to fetch status'};
     } catch (e) {
-      return {'success': false, 'message': 'Server error: $e'};
+      return {'success': false, 'message': 'Server connection error'};
     }
   }
 
-  // Request verification (select hospital)
-  static Future<Map<String, dynamic>> requestVerification(String hospitalId) async {
-    final url = Uri.parse(_buildUrl(_hospitalsRequest));
-    final headers = await _getHeaders(needsAuth: true);
+  static Future<Map<String, dynamic>> updateDriverStatus(String status) async {
+    try {
+      final response = await http.put(
+        _buildUri('/driver/status/update'),
+        headers: await _getHeaders(needsAuth: true),
+        body: jsonEncode({'status': status}),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection error'};
+    }
+  }
+  static Future<Map<String, dynamic>> updateEmergencyStatus(String emergencyId, String status) async {
+    try {
+      final response = await http.put(
+        _buildUri('/driver/emergency/update-status'),
+        headers: await _getHeaders(needsAuth: true),
+        body: jsonEncode({
+          'emergencyId': emergencyId,
+          'status': status,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection error'};
+    }
+  }
 
+  static Future<Map<String, dynamic>> rejectUserByPlatform(String userId, String reason) async {
+    try {
+      final response = await http.put(
+        _buildUri('/admin/reject/$userId'),
+        headers: await _getHeaders(needsAuth: true),
+        body: jsonEncode({'reason': reason}),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+  // --- NEW: PUBLIC USER EMERGENCY ENDPOINTS ---
+
+  static Future<Map<String, dynamic>> createEmergency(String location, String details) async {
     try {
       final response = await http.post(
-        url,
-        headers: headers,
-        body: jsonEncode({'hospitalId': hospitalId}),
+        _buildUri('/public/emergency/create'),
+        headers: await _getHeaders(needsAuth: true),
+        body: jsonEncode({
+          'location': location,
+          'details': details,
+        }),
       );
-
-      final responseBody = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && responseBody['success'] == true) {
-        return {'success': true, 'message': responseBody['message']};
-      } else {
-        return {
-          'success': false,
-          'message': responseBody['message'] ?? 'Failed to request verification'
-        };
-      }
+      return jsonDecode(response.body);
     } catch (e) {
-      print('Error requesting verification: $e');
-      return {'success': false, 'message': 'Could not connect to server.'};
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> trackEmergency(String trackingId) async {
+    try {
+      final response = await http.get(
+        _buildUri('/public/emergency/$trackingId'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  // ... inside ApiService class
+
+  static Future<Map<String, dynamic>> getDriverProfile() async {
+    try {
+      final response = await http.get(
+        _buildUri('/driver/profile'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection failed: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getActiveEmergency() async {
+    try {
+      final response = await http.get(
+        _buildUri('/driver/active-emergency'),
+        headers: await _getHeaders(needsAuth: true),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return {'success': false, 'message': 'Failed to fetch emergency'};
+    } catch (e) {
+      return {'success': false, 'message': 'Server connection error'};
     }
   }
 }

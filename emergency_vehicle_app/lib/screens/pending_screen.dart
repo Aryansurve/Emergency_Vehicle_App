@@ -1,139 +1,97 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../services/api_service.dart';
 import 'login_screen.dart';
+import '../services/api_service.dart'; // Import the ApiService
 
-class PendingScreen extends StatefulWidget {
-  const PendingScreen({Key? key}) : super(key: key);
+class PendingScreen extends StatelessWidget {
+  final String status;
 
-  @override
-  _PendingScreenState createState() => _PendingScreenState();
-}
+  const PendingScreen({Key? key, required this.status}) : super(key: key);
 
-class _PendingScreenState extends State<PendingScreen> {
-  String? _selectedHospitalId;
-  bool _isLoading = false;
-  List<Map<String, dynamic>> _hospitals = []; // Use list of maps for backend data
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchHospitals();
-  }
-
-  Future<void> _fetchHospitals() async {
-    try {
-      final hospitals = await ApiService.getHospitals();
-      setState(() {
-        // Convert to List<Map<String, dynamic>>
-        _hospitals = List<Map<String, dynamic>>.from(hospitals);
-      });
-    } catch (e) {
-      print('Error fetching hospitals: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to load hospitals'),
-          backgroundColor: Colors.red,
-        ),
-      );
+  Map<String, dynamic> _getStatusDetails() {
+    switch (status) {
+      case 'Pending Hospital Approval':
+        return {
+          'icon': Icons.business,
+          'title': 'Pending Hospital Approval',
+          'message': 'Your application has been submitted and is awaiting review from your hospital administrator.',
+          'color': Colors.orange,
+        };
+      case 'Pending Platform Approval':
+        return {
+          'icon': Icons.verified_user,
+          'title': 'Pending Final Approval',
+          'message': 'Your hospital has approved your application. It is now awaiting final verification by the platform administrator.',
+          'color': Colors.blue,
+        };
+      case 'Rejected':
+        return {
+          'icon': Icons.cancel,
+          'title': 'Application Rejected',
+          'message': 'Unfortunately, your application was not approved. Please contact your administrator for more details.',
+          'color': Colors.red,
+        };
+      default:
+        return {
+          'icon': Icons.hourglass_empty,
+          'title': 'Status Unknown',
+          'message': 'Your account status is undetermined. Please log out and try again.',
+          'color': Colors.grey,
+        };
     }
   }
 
-  Future<void> _requestVerification() async {
-    if (_selectedHospitalId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a hospital')),
+  // --- UPDATED LOGOUT FUNCTION ---
+  Future<void> _logout(BuildContext context) async {
+    // Call the secure, server-side logout
+    await ApiService.logout();
+
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
       );
-      return;
     }
-
-    setState(() => _isLoading = true);
-
-    final result = await ApiService.requestVerification(_selectedHospitalId!);
-
-    setState(() => _isLoading = false);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result['message']),
-        backgroundColor: result['success'] ? Colors.green : Colors.red,
-      ),
-    );
-  }
-
-  Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('jwt_token');
-
-    if (!mounted) return;
-
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (Route<dynamic> route) => false,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final details = _getStatusDetails();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Account Pending'),
+        title: Text(details['title']),
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: _logout,
+            onPressed: () => _logout(context), // This call is now secure
             tooltip: 'Logout',
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.hourglass_top,
-              size: 80,
-              color: Colors.blueGrey,
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Verification Pending',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Your account is awaiting admin approval. You can select a hospital to request access.',
-              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 30),
-            _hospitals.isEmpty
-                ? const CircularProgressIndicator()
-                : DropdownButtonFormField<String>(
-              value: _selectedHospitalId,
-              hint: const Text('Select Hospital'),
-              items: _hospitals.map((hospital) {
-                return DropdownMenuItem<String>(
-                  value: hospital['_id'], // send ID to backend
-                  child: Text(hospital['name']),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedHospitalId = value;
-                });
-              },
-            ),
-            const SizedBox(height: 20),
-            _isLoading
-                ? const CircularProgressIndicator()
-                : ElevatedButton(
-              onPressed: _requestVerification,
-              child: const Text('Request Access'),
-            ),
-          ],
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(details['icon'], size: 80, color: details['color']),
+              const SizedBox(height: 20),
+              Text(
+                details['title'],
+                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                details['message'],
+                style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 30),
+              if (status != 'Rejected') const CircularProgressIndicator(),
+            ],
+          ),
         ),
       ),
     );
