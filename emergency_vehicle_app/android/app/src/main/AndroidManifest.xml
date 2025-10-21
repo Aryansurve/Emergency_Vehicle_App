@@ -3,9 +3,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="emergency_vehicle_app"
+        android:label="Emergency Vehicle"
         android:icon="@mipmap/ic_launcher">
 
         <!-- ✅ Add your Google Maps API key here -->
