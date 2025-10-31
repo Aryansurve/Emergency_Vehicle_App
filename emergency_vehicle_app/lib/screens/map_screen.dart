@@ -1,43 +1,21 @@
 import 'package:flutter/material.dart';
-
 import 'package:shared_preferences/shared_preferences.dart';
-
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-
 import 'package:geocoding/geocoding.dart';
-
 import 'package:geolocator/geolocator.dart';
-
 import 'package:http/http.dart' as http;
-
 import 'dart:convert';
-
 import 'dart:async';
-
+import 'package:intl/intl.dart'; // For formatting ETA time
 import 'login_screen.dart';
-
 import 'profile_screen.dart'; // Import the new profile screen
-
 import '../services/api_service.dart'; // Make sure ApiService is imported
-
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-
-
-
 class MapScreen extends StatefulWidget {
-
   const MapScreen({Key? key}) : super(key: key);
-
-
-
   @override
-
   State<MapScreen> createState() => _MapScreenState();
-
 }
-
-
-
 class _MapScreenState extends State<MapScreen> {
 
 
@@ -52,6 +30,9 @@ class _MapScreenState extends State<MapScreen> {
 
 // --- STATE MANAGEMENT ---
 
+  final Set<Marker> _trafficSignalMarkers = {}; // <-- NEW: For signals
+  BitmapDescriptor _trafficSignalIcon = BitmapDescriptor.defaultMarker; // <-- NEW: For custom icon
+  BitmapDescriptor _userArrowIcon = BitmapDescriptor.defaultMarker; // <-- ADD THIS LINE
   String _driverStatus = 'Offline';
   Map<String, dynamic>? _activeEmergency;
   bool _isDashboardLoading = true;
@@ -61,11 +42,16 @@ class _MapScreenState extends State<MapScreen> {
 
 
 // --- MAP & ROUTE STATE ---
+  final Map<String, BitmapDescriptor> _maneuverIcons = {}; // <-- This one stays
+  final Map<String, String> _maneuverIconPaths = {}; // <-- ADD THIS NEW MAP
+
   final TextEditingController _sourceController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
+  List<LatLng> _routePolylinePoints = []; // <-- NEW: To store all points for filtering
   final Set<Polyline> _polylines = {};
+  int _durationInSeconds = 0; // <-- NEW: To calculate ETA
   StreamSubscription<Position>? _positionStreamSubscription;
   bool _isPlanningRoute = false; // Controls which top bar UI to show
   LatLng? _sourceLocation;
@@ -77,8 +63,10 @@ class _MapScreenState extends State<MapScreen> {
   String? _errorMessage;
   String? _distance;
   String? _duration;
-
+  List<Map<String, dynamic>> _navigationSteps = []; // <-- NEW: To store maneuver steps
 // Default camera position
+  Map<String, dynamic>? _currentNavStep; // <-- NEW: To display the current instruction
+
 
   static const CameraPosition _initialPosition = CameraPosition(
 
@@ -92,40 +80,69 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void initState() {
-
     super.initState();
-
     _loadInitialData();
-
     _checkLocationPermission();
-
     _initSocket(); // <-- Add this call
-
     _fetchAssignedHospital(); // <-- ADD THIS CALL
-
+    _loadCustomIcons();
   }
 
   @override
   void dispose() {
-
     _pollingTimer?.cancel();
     _positionStreamSubscription?.cancel(); // <-- ADD THIS LINE
     _locationBroadcastTimer?.cancel(); // <-- Stop the new timer
-
     _socket?.disconnect(); // <-- Disconnect the socket
-
     _sourceController.dispose();
-
     _destinationController.dispose();
-
     _mapController?.dispose();
-
     super.dispose();
-
   }
 
+// --- ADD THIS NEW FUNCTION ---
+  // In _MapScreenState class
 
+  Future<void> _loadCustomIcons() async {
+    try {
+      // Define asset paths
+      const String turnLeftPath = 'assets/icons/turn-left.png';
+      const String turnRightPath = 'assets/icons/turn-right.png';
+      const String straightPath = 'assets/icons/straight.png';
+      const String unknownPath = 'assets/icons/dot.png';
+      const String signalIconPath = 'assets/icons/traffic-light.png';
 
+      // --- ADD THIS BLOCK ---
+      const String arrowIconPath = 'assets/navigation_arrow.png'; // <-- Use your image file
+      _userArrowIcon = await BitmapDescriptor.fromAssetImage(
+          const ImageConfiguration(size: Size(96, 96)), arrowIconPath);
+      // --- END OF BLOCK ---
+
+      // 1. Load for Map Markers (BitmapDescriptor)
+      _maneuverIcons['TURN_LEFT'] = await BitmapDescriptor.fromAssetImage(
+          const ImageConfiguration(size: Size(64, 64)), turnLeftPath);
+      _maneuverIcons['TURN_RIGHT'] = await BitmapDescriptor.fromAssetImage(
+          const ImageConfiguration(size: Size(64, 64)), turnRightPath);
+      _maneuverIcons['STRAIGHT'] = await BitmapDescriptor.fromAssetImage(
+          const ImageConfiguration(size: Size(64, 64)), straightPath);
+      _maneuverIcons['UNKNOWN'] = await BitmapDescriptor.fromAssetImage(
+          const ImageConfiguration(size: Size(48, 48)), unknownPath);
+
+      // Load traffic signal icon
+      _trafficSignalIcon = await BitmapDescriptor.fromAssetImage(
+          const ImageConfiguration(size: Size(48, 48)), signalIconPath);
+
+      // 2. Load for UI Card (String paths)
+      _maneuverIconPaths['TURN_LEFT'] = turnLeftPath;
+      _maneuverIconPaths['TURN_RIGHT'] = turnRightPath;
+      _maneuverIconPaths['STRAIGHT'] = straightPath;
+      _maneuverIconPaths['UNKNOWN'] = unknownPath;
+
+      print("✅ Custom maneuver icons and paths loaded.");
+    } catch (e) {
+      print("⚠️ Error loading custom icons: $e. Make sure assets are in pubspec.yaml");
+    }
+  }
   Future<void> _fetchAssignedHospital() async {
     final profileResult = await ApiService.getDriverProfile();
     if (profileResult['success'] == true && profileResult['data'] != null) {
@@ -536,204 +553,328 @@ class _MapScreenState extends State<MapScreen> {
     }
 
   }
+// In lib/screens/map_screen.dart
+// Add this function inside your _MapScreenState class
+
+  Future<List<LatLng>> _getOverpassSignalsInBounds(LatLngBounds bounds) async {
+    // This is the simple query for all signals in a box
+    const String _overpassUrl = "https://overpass-api.de/api/interpreter";
+    final south = bounds.southwest.latitude;
+    final west = bounds.southwest.longitude;
+    final north = bounds.northeast.latitude;
+    final east = bounds.northeast.longitude;
+
+    final String query = """
+      [out:json][timeout:60];
+      (
+        node["highway"="traffic_signals"]($south,$west,$north,$east);
+      );
+      out body;
+      >;
+      out skel qt;
+    """;
+
+    print("Querying Overpass API (60s timeout)..."); // <-- I've added a new log
+
+    try {
+      final response = await http.post(
+        Uri.parse(_overpassUrl),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'data=$query',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List elements = data['elements'] ?? [];
+        final List<LatLng> signals = [];
+
+        for (var element in elements) {
+          if (element['type'] == 'node') {
+            signals.add(LatLng(element['lat'], element['lon']));
+          }
+        }
+
+        print("✅ Found ${signals.length} total signals in bounds.");
+        return signals;
+      } else {
+        print("⚠️ Overpass API error: ${response.statusCode}");
+        return [];
+      }
+    } catch (e) {
+      print("Error connecting to Overpass API: $e");
+      return [];
+    }
+  }
+// In lib/screens/map_screen.dart
+// REPLACE THIS FUNCTION
+
   Future<void> _getRouteFromRoutesAPI() async {
-
     final url = Uri.parse('https://routes.googleapis.com/directions/v2:computeRoutes');
-
     final headers = {
-
       'Content-Type': 'application/json',
-
       'X-Goog-Api-Key': _googleApiKey,
-
-      'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
-
+      'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.startLocation.latLng,routes.travelAdvisory.speedReadingIntervals',
     };
 
     final body = jsonEncode({
-
       'origin': {'location': {'latLng': {'latitude': _sourceLocation!.latitude, 'longitude': _sourceLocation!.longitude}}},
-
       'destination': {'location': {'latLng': {'latitude': _destinationLocation!.latitude, 'longitude': _destinationLocation!.longitude}}},
-
       'travelMode': 'DRIVE',
-
       'routingPreference': 'TRAFFIC_AWARE',
-
+      'computeAlternativeRoutes': false,
+      'languageCode': 'en-US',
+      'units': 'METRIC',
     });
 
-
+    setState(() {
+      _polylines.clear();
+      _markers.clear();
+      _trafficSignalMarkers.clear();
+      _navigationSteps.clear();
+      _routePolylinePoints.clear();
+      _errorMessage = null;
+    });
 
     final response = await http.post(url, headers: headers, body: body);
 
-
-
     if (response.statusCode == 200) {
-
       final data = jsonDecode(response.body);
-
       if (data['routes'] != null && data['routes'].isNotEmpty) {
-
         final route = data['routes'][0];
 
-
-
-// Distance and Duration
-
+        // ... (Parsing logic for distance, duration, steps, polyline) ...
         final distanceMeters = route['distanceMeters'];
-
-        _distance = distanceMeters != null ? '${(distanceMeters / 1000).toStringAsFixed(2)} km' : null;
-
-
-
+        _distance = distanceMeters != null ? '${(distanceMeters / 1000).toStringAsFixed(1)} km' : null;
         final durationStr = route['duration'];
-
         if (durationStr != null) {
-
-          int seconds = int.parse(durationStr.replaceAll('s', ''));
-
-          _duration = '${(seconds / 60).round()} min';
-
+          _durationInSeconds = int.parse(durationStr.replaceAll('s', ''));
+          _duration = '${(_durationInSeconds / 60).round()} min';
         }
-
-
-
-// Polyline
-
         String encodedPolyline = route['polyline']['encodedPolyline'];
-
-        List<LatLng> polylineCoordinates = _decodePolyline(encodedPolyline);
-
-
-
+        _routePolylinePoints = _decodePolyline(encodedPolyline);
+        if (route['legs'] != null && route['legs'].isNotEmpty) {
+          final steps = route['legs'][0]['steps'] as List;
+          List<Map<String, dynamic>> newSteps = [];
+          for (var step in steps) {
+            final instructionData = step['navigationInstruction'];
+            final locationData = step['startLocation']['latLng'];
+            if (instructionData != null && locationData != null) {
+              newSteps.add({
+                'maneuver': instructionData['maneuver'] ?? 'UNKNOWN',
+                'instructions': instructionData['instructions'] ?? 'Continue',
+                'latLng': LatLng(locationData['latitude'], locationData['longitude']),
+              });
+            }
+          }
+          _navigationSteps = newSteps;
+          print("✅ Loaded ${_navigationSteps.length} navigation steps.");
+        }
+        final Set<Polyline> newPolylines = {};
+        if (route['travelAdvisory'] != null && route['travelAdvisory']['speedReadingIntervals'] != null) {
+          final intervals = route['travelAdvisory']['speedReadingIntervals'] as List;
+          for (var interval in intervals) {
+            final speed = interval['speed'];
+            final color = _getColorForSpeed(speed);
+            final int startIndex = interval['startPolylinePointIndex'] ?? 0;
+            final int endIndex = interval['endPolylinePointIndex'] ?? _routePolylinePoints.length - 1;
+            final List<LatLng> segmentPoints = _routePolylinePoints.sublist(startIndex, endIndex + 1);
+            newPolylines.add(
+                Polyline(
+                  polylineId: PolylineId('route_segment_$startIndex'),
+                  points: segmentPoints,
+                  color: color,
+                  width: 7,
+                  startCap: Cap.roundCap,
+                  endCap: Cap.roundCap,
+                )
+            );
+          }
+        } else {
+          newPolylines.add(
+              Polyline(
+                polylineId: const PolylineId('route'),
+                points: _routePolylinePoints,
+                color: Colors.blue,
+                width: 7,
+              )
+          );
+        }
         setState(() {
-
-          _polylines.add(Polyline(polylineId: const PolylineId('route'), color: Colors.blue, width: 5, points: polylineCoordinates));
-
+          _polylines.addAll(newPolylines);
           _markers.add(Marker(markerId: const MarkerId('source'), position: _sourceLocation!, infoWindow: InfoWindow(title: 'Source')));
-
           _markers.add(Marker(markerId: const MarkerId('destination'), position: _destinationLocation!, infoWindow: InfoWindow(title: 'Destination')));
-
         });
 
-
-
-// Animate camera to show the full route
-
+        // --- Animate Camera & Fetch Signals ---
         if (_sourceLocation != null && _destinationLocation != null) {
-
-// Determine the bounds of the route
-
           LatLng southwest = LatLng(
-
-            _sourceLocation!.latitude < _destinationLocation!.latitude
-
-                ? _sourceLocation!.latitude
-
-                : _destinationLocation!.latitude,
-
-            _sourceLocation!.longitude < _destinationLocation!.longitude
-
-                ? _sourceLocation!.longitude
-
-                : _destinationLocation!.longitude,
-
+            _sourceLocation!.latitude < _destinationLocation!.latitude ? _sourceLocation!.latitude : _destinationLocation!.latitude,
+            _sourceLocation!.longitude < _destinationLocation!.longitude ? _sourceLocation!.longitude : _destinationLocation!.longitude,
           );
-
           LatLng northeast = LatLng(
-
-            _sourceLocation!.latitude > _destinationLocation!.latitude
-
-                ? _sourceLocation!.latitude
-
-                : _destinationLocation!.latitude,
-
-            _sourceLocation!.longitude > _destinationLocation!.longitude
-
-                ? _sourceLocation!.longitude
-
-                : _destinationLocation!.longitude,
-
+            _sourceLocation!.latitude > _destinationLocation!.latitude ? _sourceLocation!.latitude : _destinationLocation!.latitude,
+            _sourceLocation!.longitude > _destinationLocation!.longitude ? _sourceLocation!.longitude : _destinationLocation!.longitude,
           );
+          final LatLngBounds routeBounds = LatLngBounds(southwest: southwest, northeast: northeast);
 
+          _mapController?.animateCamera(CameraUpdate.newLatLngBounds(routeBounds, 80.0));
 
+          // --- !! THIS IS THE NEW LOGIC !! ---
+          if (_routePolylinePoints.isNotEmpty) {
+            // Downsample the polyline to avoid a huge query
+            List<LatLng> queryPoints = [];
+            int step = (_routePolylinePoints.length / 30).ceil(); // ~30 points
+            if (step == 0) step = 1;
 
-// Animate the camera to fit these bounds with some padding
+            for (int i = 0; i < _routePolylinePoints.length; i += step) {
+              queryPoints.add(_routePolylinePoints[i]);
+            }
 
-          _mapController?.animateCamera(
-
-            CameraUpdate.newLatLngBounds(
-
-              LatLngBounds(southwest: southwest, northeast: northeast),
-
-              80.0, // This padding ensures the markers aren't at the very edge of the screen
-
-            ),
-
-          );
-
+            // Call the plotting function with the downsampled points
+            _fetchAndPlotTrafficSignals(queryPoints);
+          }
+          // --- END OF NEW LOGIC ---
         }
-
       }
-
     } else {
+      final errorBody = jsonDecode(response.body);
+      setState(() {
+        _errorMessage = errorBody['error']['message'] ?? 'Failed to get route from API';
+      });
+      print("Error from Routes API: ${response.body}");
+      throw Exception('Failed to get route from API: ${response.body}');
+    }
+  }
 
-      throw Exception('Failed to get route from API');
+  // In lib/screens/map_screen.dart
 
+// In lib/screens/map_screen.dart
+// ADD THIS FUNCTION
+
+  Future<List<LatLng>> _getOverpassSignalsNearPoints(List<LatLng> points) async {
+    // This query finds all signals 'around' each point in the list
+    // We set a 50m radius (around:50.0)
+    String query = "[out:json][timeout:25];(node(around:35.0";
+
+    // Add all points to the query
+    for (var point in points) {
+      query += ",${point.latitude},${point.longitude}";
     }
 
+    query += ")[\"highway\"=\"traffic_signals\"];);out body;>;out skel qt;";
+
+    print("Querying Overpass API with ${points.length} points (around:50.0)...");
+
+    try {
+      final response = await http.post(
+        Uri.parse("https://overpass-api.de/api/interpreter"),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'data=$query',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List elements = data['elements'] ?? [];
+        final List<LatLng> signals = [];
+        final Set<String> uniqueIds = {}; // To avoid duplicate signals
+
+        for (var element in elements) {
+          if (element['type'] == 'node') {
+            final String id = element['id'].toString();
+            if (!uniqueIds.contains(id)) {
+              signals.add(LatLng(element['lat'], element['lon']));
+              uniqueIds.add(id);
+            }
+          }
+        }
+
+        print("✅ Overpass query success. Found ${signals.length} traffic signals.");
+        return signals;
+      } else {
+        print("⚠️ Overpass API error: ${response.statusCode}");
+        return [];
+      }
+    } catch (e) {
+      print("Error connecting to Overpass API: $e");
+      return [];
+    }
+  }
+// In lib/screens/map_screen.dart
+// REPLACE THIS FUNCTION
+
+  Future<void> _fetchAndPlotTrafficSignals(List<LatLng> queryPoints) async {
+
+    // --- STEP 1: Get signals near our downsampled route points ---
+    List<LatLng> signalLocations = await _getOverpassSignalsNearPoints(queryPoints);
+
+    if (signalLocations.isEmpty) {
+      print("--- No signals found on route via (around:) query. ---");
+      return;
+    }
+
+    // --- STEP 2: Plot the signals ---
+    Set<Marker> newSignalMarkers = {};
+    for (int i = 0; i < signalLocations.length; i++) {
+      newSignalMarkers.add(
+        Marker(
+          markerId: MarkerId('signal_$i'),
+          position: signalLocations[i],
+          // --- Using the default yellow marker as requested ---
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+          infoWindow: const InfoWindow(title: 'Traffic Signal'),
+          anchor: const Offset(0.5, 0.5),
+        ),
+      );
+    }
+    print("✅ Plotting ${newSignalMarkers.length} signals.");
+
+    setState(() {
+      _trafficSignalMarkers.addAll(newSignalMarkers);
+    });
   }
   List<LatLng> _decodePolyline(String encoded) {
-
     List<LatLng> points = [];
-
     int index = 0, len = encoded.length;
-
     int lat = 0, lng = 0;
 
     while (index < len) {
-
       int b, shift = 0, result = 0;
-
       do {
-
         b = encoded.codeUnitAt(index++) - 63;
-
         result |= (b & 0x1f) << shift;
-
         shift += 5;
-
       } while (b >= 0x20);
-
       int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-
       lat += dlat;
-
       shift = 0;
-
       result = 0;
-
       do {
-
         b = encoded.codeUnitAt(index++) - 63;
-
         result |= (b & 0x1f) << shift;
-
         shift += 5;
-
       } while (b >= 0x20);
-
       int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-
       lng += dlng;
-
       points.add(LatLng(lat / 1E5, lng / 1E5));
-
     }
-
     return points;
-
   }
+
+  Color _getColorForSpeed(String speed) {
+    switch (speed) {
+      case 'SLOW':
+        return Colors.orange;
+      case 'TRAFFIC_JAM':
+        return Colors.red;
+      case 'NORMAL':
+      default:
+        return Colors.blue;
+    }
+  }
+
+
+
+
   Future<void> _getManualRoute() async {
 
     String sourceInput = _sourceController.text.trim();
@@ -885,6 +1026,14 @@ class _MapScreenState extends State<MapScreen> {
     }
 
   }
+
+
+// In lib/screens/map_screen.dart
+// REPLACE this function
+
+// In lib/screens/map_screen.dart
+// REPLACE THIS FUNCTION
+
   void _startNavigation() {
     print("Start Navigation (Stage 1: To Patient)");
     print("Destination: $_destinationLocation");
@@ -896,63 +1045,115 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    // Cancel any previous GPS subscription
+    setState(() {
+      _markers.clear(); // Clear source/dest markers
+      _isNavigating = true;
+      _navigationStage = 1;
+      _isPlanningRoute = false;
+    });
+
     _positionStreamSubscription?.cancel();
 
-    setState(() {
-      _isNavigating = true;
-      _navigationStage = 1; // Stage 1: Navigating to patient
-      _isPlanningRoute = false; // Hide planning UI if it was open
-    });
-
-    _positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10, // Update roughly every 10 meters
-      ),
-    ).listen((Position position) {
-      LatLng currentLatLng = LatLng(position.latitude, position.longitude);
-
-      // Animate camera to follow driver
-      _mapController?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: currentLatLng,
-            zoom: 17.0,
-            bearing: position.heading,
-            tilt: 50.0,
-          ),
+    // --- THIS IS THE ZOOM FIX ---
+    // 1. We first animate the camera to the start location.
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(_sourceLocation!, 17.0),
+    ).then((_) {
+      // 2. ONLY AFTER the animation is done, we start listening to the GPS.
+      // This stops the camera from snapping back.
+      _positionStreamSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
         ),
-      );
+      ).listen((Position position) {
+        LatLng currentLatLng = LatLng(position.latitude, position.longitude);
 
-      // --- ARRIVAL DETECTION ---
-      // Check only when navigating to the patient (stage 1)
-      if (_navigationStage == 1 && _destinationLocation != null) {
-        double distanceInMeters = Geolocator.distanceBetween(
-          currentLatLng.latitude,
-          currentLatLng.longitude,
-          _destinationLocation!.latitude,
-          _destinationLocation!.longitude,
+        // a. Animate camera to follow driver (this now happens *after* the zoom)
+        _mapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: currentLatLng,
+              zoom: 17.0,
+              bearing: position.heading,
+              tilt: 50.0,
+            ),
+          ),
         );
 
-        // Check if driver is within 50 meters of the destination
-        if (distanceInMeters < 50) {
-          print("✅ Arrived at patient location!");
-          _positionStreamSubscription?.cancel(); // Stop tracking temporarily
-          _positionStreamSubscription = null;
+        // b. Draw the rotating user arrow
+        setState(() {
+          _markers.removeWhere((m) => m.markerId.value == 'user_location');
+          _markers.add(
+            Marker(
+              markerId: const MarkerId('user_location'),
+              position: currentLatLng,
+              icon: _userArrowIcon,
+              rotation: position.heading,
+              anchor: const Offset(0.5, 0.5),
+              flat: true,
+              zIndex: 2,
+            ),
+          );
+        });
 
-          // Update state BEFORE showing dialog
-          setState(() => _isNavigating = false); // Temporarily stop navigation state
-          _showHospitalChoiceDialog(currentLatLng); // Show popup to choose hospital
+        // c. Logic to find and display current nav step
+        if (_navigationSteps.isNotEmpty) {
+          // ... (this logic is unchanged)
+          Map<String, dynamic>? closestStep;
+          double minDistance = double.infinity;
+          for (var step in _navigationSteps) {
+            final stepLatLng = step['latLng'] as LatLng;
+            final distance = Geolocator.distanceBetween(
+              currentLatLng.latitude, currentLatLng.longitude,
+              stepLatLng.latitude, stepLatLng.longitude,
+            );
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestStep = step;
+            }
+          }
+          if (minDistance < 30 && closestStep != null) {
+            int stepIndex = _navigationSteps.indexOf(closestStep);
+            if (stepIndex < _navigationSteps.length - 1) {
+              _navigationSteps.removeAt(stepIndex);
+            }
+          }
+          if (_navigationSteps.isNotEmpty) {
+            setState(() {
+              _currentNavStep = _navigationSteps.first;
+            });
+          }
         }
-      }
+
+        // d. Arrival detection logic
+        if (_navigationStage == 1 && _destinationLocation != null) {
+          // ... (this logic is unchanged)
+          double distanceInMeters = Geolocator.distanceBetween(
+            currentLatLng.latitude, currentLatLng.longitude,
+            _destinationLocation!.latitude, _destinationLocation!.longitude,
+          );
+          if (distanceInMeters < 50) {
+            print("✅ Arrived at patient location!");
+            _positionStreamSubscription?.cancel();
+            _positionStreamSubscription = null;
+            setState(() {
+              _isNavigating = false;
+              _currentNavStep = null;
+              _markers.removeWhere((m) => m.markerId.value == 'user_location');
+            });
+            _showHospitalChoiceDialog(currentLatLng);
+          }
+        }
+      });
     });
+    // --- END OF THE ZOOM FIX ---
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Navigating to patient location...')),
     );
   }
-// --- ADD FUNCTION 1: Show Hospital Choice ---
+  // --- ADD FUNCTION 1: Show Hospital Choice ---
   Future<void> _showHospitalChoiceDialog(LatLng currentPosition) async {
     // Vibration import needed: import 'package:vibration/vibration.dart';
 
@@ -1061,15 +1262,20 @@ class _MapScreenState extends State<MapScreen> {
     _positionStreamSubscription = null;
     setState(() {
       _isNavigating = false;
-      _navigationStage = 0; // Reset stage to Idle
-      // Optionally clear route visuals if you want
-      // _polylines.clear();
-      // _markers.clear();
-      // _distance = null;
-      // _duration = null;
+      _navigationStage = 0;
+
+      _polylines.clear();
+      _markers.clear();
+      _trafficSignalMarkers.clear();
+      _markers.removeWhere((m) => m.markerId.value == 'user_location'); // <-- ADD THIS
+      _routePolylinePoints.clear();
+      _navigationSteps.clear();
+      _currentNavStep = null;
+      _distance = null;
+      _duration = null;
+      _durationInSeconds = 0;
     });
 
-    // Reset camera to default view
     _mapController?.animateCamera(
       CameraUpdate.newCameraPosition(_initialPosition),
     );
@@ -1078,116 +1284,43 @@ class _MapScreenState extends State<MapScreen> {
       const SnackBar(content: Text('Navigation stopped.')),
     );
   }
-
 // --- MAIN BUILD METHOD (with the duplicate removed) ---
 
   @override
 
+  @override
   Widget build(BuildContext context) {
-
     return Scaffold(
-
-// The body is now a Stack
-
       body: Stack(
-
         children: [
-
-// LAYER 1: The Google Map
-
+          // LAYER 1: The Google Map
           GoogleMap(
-
             initialCameraPosition: _initialPosition,
-
-            markers: _markers,
-
+            markers: Set.from(_markers)..addAll(_trafficSignalMarkers),
             polylines: _polylines,
-
             onMapCreated: (controller) => _mapController = controller,
+            myLocationEnabled: false,
+            myLocationButtonEnabled: true,
 
-            myLocationEnabled: true,
-
-            myLocationButtonEnabled: false,
-
-            trafficEnabled: true,
-
+            trafficEnabled: true, // Keep this true! It helps Google's ETA
             zoomControlsEnabled: false,
-
-            padding: EdgeInsets.only(bottom: 100, top: 100),
-
+            // ** UPDATED Padding to make room for top and bottom cards **
+            padding: EdgeInsets.only(
+              bottom: _isNavigating ? 100 : 100, // Room for bottom card
+              top: _isNavigating ? 140 : 100,  // Room for top card
+            ),
           ),
 
-
-
-// LAYER 2: The UI elements
-
+          // LAYER 2: The UI elements
           if (_isDashboardLoading)
-
             const Center(child: CircularProgressIndicator())
-
           else if (_activeEmergency != null)
-
             SafeArea(child: _buildMissionView())
-
           else
+            _buildStandbyUI(), // Search bar, FABs, availability
 
-            _buildStandbyUI(), // This includes the search bar, FABs, etc.
-
-
-
-// --- NEW: LAYER 3 - START NAVIGATION BUTTON ---
-
-// Show this button only when a route is displayed and not on a mission
-
-          if (_polylines.isNotEmpty && _activeEmergency == null)
-
-            Positioned(
-
-              bottom: 120, // Adjust position to be above the availability card
-
-              left: 0,
-
-              right: 0,
-
-              child: Center(
-
-                child: Padding(
-
-                  padding: const EdgeInsets.symmetric(horizontal: 50.0),
-
-                  child: ElevatedButton.icon(
-
-                    icon: const Icon(Icons.navigation_rounded),
-
-                    label: const Text("Start Navigation"),
-
-                    style: ElevatedButton.styleFrom(
-
-                      backgroundColor: Colors.blue, // Navigation color
-
-                      foregroundColor: Colors.white,
-
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-
-                      shape: RoundedRectangleBorder(
-
-                        borderRadius: BorderRadius.circular(30.0),
-
-                      ),
-
-                    ),
-
-                    onPressed: _startNavigation, // Call the navigation function
-
-                  ),
-
-                ),
-
-              ),
-
-            ),
-          // --- UPDATED: LAYER 3 - NAVIGATION CONTROL BUTTON ---
-          if (_polylines.isNotEmpty && _activeEmergency == null)
+          // LAYER 3: Standby "Start Navigation" button
+          if (_polylines.isNotEmpty && !_isNavigating && _activeEmergency == null)
             Positioned(
               bottom: 120, // Adjust position as needed
               left: 0,
@@ -1196,31 +1329,142 @@ class _MapScreenState extends State<MapScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 50.0),
                   child: ElevatedButton.icon(
-                    // Change icon, label, color, and action based on _isNavigating state
-                    icon: Icon(_isNavigating ? Icons.stop_circle_outlined : Icons.navigation_rounded),
-                    label: Text(_isNavigating ? "Stop Navigation" : "Start Navigation"),
+                    icon: const Icon(Icons.navigation_rounded),
+                    label: const Text("Start Navigation"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isNavigating ? Colors.red : Colors.blue, // Red for stop, Blue for start
+                      backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30.0),
                       ),
                     ),
-                    // Call appropriate function based on state
-                    onPressed: _isNavigating ? _stopNavigation : _startNavigation,
+                    onPressed: _startNavigation,
                   ),
                 ),
               ),
             ),
-// --- END OF START NAVIGATION BUTTON ---
 
+          // LAYER 4: LIVE NAVIGATION CARD (TOP)
+          if (_isNavigating && _currentNavStep != null)
+            _buildNavigationInstructionCard(),
+
+          // --- NEW: LAYER 5 - LIVE NAVIGATION CARD (BOTTOM) ---
+          if (_isNavigating)
+            _buildBottomNavigationCard(),
         ],
-
       ),
-
     );
+  }
+  // In _MapScreenState class, add this new widget function
 
+  Widget _buildNavigationInstructionCard() {
+    if (_currentNavStep == null) {
+      return Container(); // Return empty if no step
+    }
+
+    final maneuverType = _currentNavStep!['maneuver'].toString().toUpperCase();
+    final instructions = _currentNavStep!['instructions'].toString();
+
+    final iconPath = _maneuverIconPaths[maneuverType] ??
+        _maneuverIconPaths['STRAIGHT'] ??
+        _maneuverIconPaths['UNKNOWN'];
+
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Card(
+          elevation: 8,
+          margin: const EdgeInsets.all(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                if (iconPath != null)
+                  Image.asset(
+                    iconPath,
+                    width: 50,
+                    height: 50,
+                    errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.navigation, size: 50),
+                  ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    instructions,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  Widget _buildBottomNavigationCard() {
+    if (_duration == null || _distance == null) {
+      return Container();
+    }
+
+    // Calculate ETA
+    final now = DateTime.now();
+    final etaTime = now.add(Duration(seconds: _durationInSeconds));
+    final etaString = DateFormat.jm().format(etaTime); // e.g., "4:37 PM"
+
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Card(
+        margin: const EdgeInsets.all(12),
+        elevation: 8,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Stop Button
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.red, size: 30),
+                onPressed: _stopNavigation,
+              ),
+
+              // ETA Info
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _duration!,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                  Text(
+                    "$_distance · $etaString",
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+
+              // Re-center Button
+              IconButton(
+                icon: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+                onPressed: _goToCurrentLocation,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
   Widget _buildSearchBar() {
 
@@ -1306,372 +1550,176 @@ class _MapScreenState extends State<MapScreen> {
 
   }
   Widget _buildRoutePlanningBar() {
-
     return Column(
-
-      mainAxisSize: MainAxisSize.min, // Keeps column compact
-
+      mainAxisSize: MainAxisSize.min,
       children: [
-
-// --- SOURCE TEXTFIELD ---
-
-        TextField( // Source TextField
-
+        TextField(
           controller: _sourceController,
-
           decoration: InputDecoration(
-
               hintText: 'Choose starting point, or click map',
-
               border: InputBorder.none,
-
-              prefixIcon: const Icon(Icons.my_location, color: Colors.blue), // <-- This is the icon to remove
-
+              prefixIcon: const Icon(Icons.my_location, color: Colors.blue),
               suffixIcon: IconButton(
-
                 icon: const Icon(Icons.close),
-
                 onPressed: () => setState(() => _isPlanningRoute = false),
-
               )
-
           ),
-
         ),
-
-
-
         const Divider(height: 1, thickness: 1),
-
-
-
-// --- DESTINATION TEXTFIELD + BUTTON ---
-
         Row(
-
           children: [
-
             Expanded(
-
               child: TextField(
-
                 controller: _destinationController,
-
                 decoration: const InputDecoration(
-
                   hintText: 'Choose destination',
-
                   border: InputBorder.none,
-
                   prefixIcon: Icon(Icons.flag, color: Colors.red),
-
                 ),
-
-                onSubmitted: (_) => _getManualRoute(), // Trigger route search
-
+                onSubmitted: (_) => _getManualRoute(),
               ),
-
             ),
-
-
-
-// --- "GO" BUTTON OR LOADING INDICATOR ---
-
             _isRouteLoading
-
                 ? const Padding(
-
               padding: EdgeInsets.all(8.0),
-
               child: SizedBox(
-
                 width: 24,
-
                 height: 24,
-
                 child: CircularProgressIndicator(strokeWidth: 3),
-
               ),
-
             )
-
                 : IconButton(
-
               icon: const Icon(Icons.send, color: Colors.green),
-
               tooltip: 'Find Route',
-
               onPressed: _getManualRoute,
-
             ),
-
           ],
-
         ),
-
       ],
-
     );
-
   }
   Widget _buildMissionView() {
-
     final emergency = _activeEmergency!;
-
     final status = emergency['status'];
-
-
-
     return Padding(
-
       padding: const EdgeInsets.all(16.0),
-
       child: Column(
-
         crossAxisAlignment: CrossAxisAlignment.stretch,
-
         children: [
-
           Text('ACTIVE MISSION', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.red[700])),
-
           const Divider(thickness: 1.5),
-
           const SizedBox(height: 8),
-
           _buildInfoRow(Icons.location_on, 'Location:', emergency['location']),
-
           _buildInfoRow(Icons.description, 'Details:', emergency['details']),
-
           _buildInfoRow(Icons.warning_amber, 'Status:', status, isStatus: true),
-
           const Spacer(),
-
-// These buttons appear based on the current mission status
-
           if (status == 'Assigned' || status == 'En Route')
-
             _buildActionButton(
-
               'Mark as On Scene',
-
               Icons.local_hospital,
-
               Colors.orange,
-
                   () => _handleUpdateEmergencyStatus('On Scene'),
-
             ),
-
           if (status == 'On Scene')
-
             _buildActionButton(
-
               'Resolve Mission',
-
               Icons.check_circle,
-
               Colors.green,
-
                   () => _handleUpdateEmergencyStatus('Resolved'),
-
             ),
-
         ],
-
       ),
-
     );
-
   }
   Widget _buildStandbyUI() {
-
     return SafeArea(
-
       child: Column(
-
-        mainAxisAlignment: MainAxisAlignment.spaceBetween, // Pushes elements to top and bottom
-
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-
-// Top Search/Route Bar Area
-
           Padding(
-
             padding: const EdgeInsets.all(12.0),
-
             child: Card(
-
               elevation: 8,
-
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-
-// This switches between the search bar and the route planning inputs
-
               child: _isPlanningRoute ? _buildRoutePlanningBar() : _buildSearchBar(),
-
             ),
-
           ),
-
-
-
-// FABs on the bottom right
-
           Align(
-
-            alignment: Alignment.bottomRight, // Position bottom-right
-
+            alignment: Alignment.bottomRight,
             child: Padding(
-
               padding: const EdgeInsets.only(right: 16.0, bottom: 16.0),
-
               child: Column(
-
-                mainAxisSize: MainAxisSize.min, // Keep column compact
-
+                mainAxisSize: MainAxisSize.min,
                 children: [
-
                   FloatingActionButton(
-
                     heroTag: 'directions_fab',
-
                     mini: true,
-
                     backgroundColor: Colors.white,
-
                     tooltip: 'Plan Route',
-
                     child: Icon(Icons.directions, color: Theme.of(context).primaryColor),
-
                     onPressed: () => setState(() => _isPlanningRoute = true),
-
                   ),
-
                   const SizedBox(height: 10),
-
                   FloatingActionButton(
-
                     heroTag: 'location_fab',
-
                     tooltip: 'My Location',
-
                     child: const Icon(Icons.my_location),
-
                     onPressed: _goToCurrentLocation,
-
                   ),
-
                 ],
-
               ),
-
             ),
-
           ),
-
-
-
-// Availability Toggle Card at the very bottom
-
           _buildAvailabilityCard(),
-
         ],
-
       ),
-
     );
-
   }
   Widget _buildAvailabilityCard() {
-
     return Card(
-
       margin: const EdgeInsets.all(12),
-
-      elevation: 4, // Add some shadow
-
+      elevation: 4,
       child: ListTile(
-
         title: const Text('My Availability'),
-
         subtitle: Text('You are currently $_driverStatus'),
-
         trailing: Switch(
-
           value: _driverStatus == 'Available',
-
           onChanged: _toggleAvailability,
-
         ),
-
       ),
-
     );
-
   }
   Widget _buildInfoRow(IconData icon, String label, String value, {bool isStatus = false}) {
-
     return Padding(
-
       padding: const EdgeInsets.symmetric(vertical: 4.0),
-
       child: Row(
-
         crossAxisAlignment: CrossAxisAlignment.start,
-
         children: [
-
           Icon(icon, color: Colors.grey[600], size: 20),
-
           const SizedBox(width: 8),
-
           Text('$label ', style: const TextStyle(fontWeight: FontWeight.bold)),
-
           Expanded(
-
             child: Text(
-
               value,
-
               style: isStatus
-
                   ? TextStyle(fontStyle: FontStyle.italic, color: Colors.blue[700])
-
                   : null,
-
             ),
-
           ),
-
         ],
-
       ),
-
     );
-
   }
   Widget _buildActionButton(String text, IconData icon, Color color, VoidCallback onPressed) {
-
     return ElevatedButton.icon(
-
       icon: Icon(icon),
-
       label: Text(text, style: const TextStyle(fontSize: 16)),
-
       onPressed: onPressed,
-
       style: ElevatedButton.styleFrom(
-
         backgroundColor: color,
-
         padding: const EdgeInsets.symmetric(vertical: 12),
-
       ),
-
     );
-
   }
-
-
 
 }

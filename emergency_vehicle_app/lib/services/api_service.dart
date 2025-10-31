@@ -4,7 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // --- CONFIGURATION ---
-  static const String _baseUrl = "http://192.168.0.127:5000/api/v1";
+  static const String _baseUrl = "http://192.168.0.128:5000/api/v1";
+  //static const String _baseUrl = "https://emergency-vehicle-app.onrender.com/api/v1";
 
   // --- HELPER METHODS ---
   static Uri _buildUri(String path) => Uri.parse(_baseUrl + path);
