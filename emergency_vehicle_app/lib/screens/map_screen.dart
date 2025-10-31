@@ -26,9 +26,18 @@ class _MapScreenState extends State<MapScreen> {
 
   Timer? _locationBroadcastTimer;
 
-
+  final Set<int> _preemptionApiSent = {};
 
 // --- STATE MANAGEMENT ---
+
+  // --- ADD THESE NEW SIMULATION VARIABLES ---
+  Timer? _simulationTimer;
+  int _simulationIndex = 0;
+  int _lastPassedSignalIndex = -1;
+  List<Marker> _sortedSignalMarkers = [];
+  BitmapDescriptor _signalIconGreen = BitmapDescriptor.defaultMarker;
+  BitmapDescriptor _signalIconRed = BitmapDescriptor.defaultMarker;
+  // --- END OF NEW VARIABLES ---
 
   final Set<Marker> _trafficSignalMarkers = {}; // <-- NEW: For signals
   BitmapDescriptor _trafficSignalIcon = BitmapDescriptor.defaultMarker; // <-- NEW: For custom icon
@@ -103,6 +112,9 @@ class _MapScreenState extends State<MapScreen> {
 // --- ADD THIS NEW FUNCTION ---
   // In _MapScreenState class
 
+// In lib/screens/map_screen.dart
+// REPLACE your _loadCustomIcons function with this
+
   Future<void> _loadCustomIcons() async {
     try {
       // Define asset paths
@@ -110,12 +122,13 @@ class _MapScreenState extends State<MapScreen> {
       const String turnRightPath = 'assets/icons/turn-right.png';
       const String straightPath = 'assets/icons/straight.png';
       const String unknownPath = 'assets/icons/dot.png';
-      const String signalIconPath = 'assets/icons/traffic-light.png';
+      // Note: I am removing the custom 'traffic-light.png' since we are using the default red/green markers
+      // const String signalIconPath = 'assets/icons/traffic-light.png';
 
       // --- ADD THIS BLOCK ---
-      const String arrowIconPath = 'assets/navigation_arrow.png'; // <-- Use your image file
-      _userArrowIcon = await BitmapDescriptor.fromAssetImage(
-          const ImageConfiguration(size: Size(96, 96)), arrowIconPath);
+      // We are *not* loading the custom arrow, so this block is also removed.
+      // const String arrowIconPath = 'assets/icons/navigation_arrow.png';
+      // _userArrowIcon = await BitmapDescriptor.fromAssetImage( ... );
       // --- END OF BLOCK ---
 
       // 1. Load for Map Markers (BitmapDescriptor)
@@ -128,9 +141,15 @@ class _MapScreenState extends State<MapScreen> {
       _maneuverIcons['UNKNOWN'] = await BitmapDescriptor.fromAssetImage(
           const ImageConfiguration(size: Size(48, 48)), unknownPath);
 
-      // Load traffic signal icon
-      _trafficSignalIcon = await BitmapDescriptor.fromAssetImage(
-          const ImageConfiguration(size: Size(48, 48)), signalIconPath);
+      // --- This is all we need for the signal icons ---
+      _signalIconRed = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+      _signalIconGreen = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+      _trafficSignalIcon = _signalIconRed; // Default to red
+      // --- End ---
+
+      // --- This is all we need for the user icon ---
+      _userArrowIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
+      // --- End ---
 
       // 2. Load for UI Card (String paths)
       _maneuverIconPaths['TURN_LEFT'] = turnLeftPath;
@@ -143,6 +162,7 @@ class _MapScreenState extends State<MapScreen> {
       print("⚠️ Error loading custom icons: $e. Make sure assets are in pubspec.yaml");
     }
   }
+
   Future<void> _fetchAssignedHospital() async {
     final profileResult = await ApiService.getDriverProfile();
     if (profileResult['success'] == true && profileResult['data'] != null) {
@@ -720,18 +740,10 @@ class _MapScreenState extends State<MapScreen> {
           _mapController?.animateCamera(CameraUpdate.newLatLngBounds(routeBounds, 80.0));
 
           // --- !! THIS IS THE NEW LOGIC !! ---
+          // --- !! THIS IS THE FIX !! ---
+          // We pass BOTH the bounds (for the API) AND the full route points (for filtering)
           if (_routePolylinePoints.isNotEmpty) {
-            // Downsample the polyline to avoid a huge query
-            List<LatLng> queryPoints = [];
-            int step = (_routePolylinePoints.length / 30).ceil(); // ~30 points
-            if (step == 0) step = 1;
-
-            for (int i = 0; i < _routePolylinePoints.length; i += step) {
-              queryPoints.add(_routePolylinePoints[i]);
-            }
-
-            // Call the plotting function with the downsampled points
-            _fetchAndPlotTrafficSignals(queryPoints);
+            _fetchAndPlotTrafficSignals(routeBounds, _routePolylinePoints);
           }
           // --- END OF NEW LOGIC ---
         }
@@ -746,92 +758,276 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // In lib/screens/map_screen.dart
+  Future<void> _fetchAndPlotTrafficSignals(LatLngBounds bounds, List<LatLng> routePoints) async {
 
-// In lib/screens/map_screen.dart
-// ADD THIS FUNCTION
-
-  Future<List<LatLng>> _getOverpassSignalsNearPoints(List<LatLng> points) async {
-    // This query finds all signals 'around' each point in the list
-    // We set a 50m radius (around:50.0)
-    String query = "[out:json][timeout:25];(node(around:35.0";
-
-    // Add all points to the query
-    for (var point in points) {
-      query += ",${point.latitude},${point.longitude}";
-    }
-
-    query += ")[\"highway\"=\"traffic_signals\"];);out body;>;out skel qt;";
-
-    print("Querying Overpass API with ${points.length} points (around:50.0)...");
-
-    try {
-      final response = await http.post(
-        Uri.parse("https://overpass-api.de/api/interpreter"),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'data=$query',
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List elements = data['elements'] ?? [];
-        final List<LatLng> signals = [];
-        final Set<String> uniqueIds = {}; // To avoid duplicate signals
-
-        for (var element in elements) {
-          if (element['type'] == 'node') {
-            final String id = element['id'].toString();
-            if (!uniqueIds.contains(id)) {
-              signals.add(LatLng(element['lat'], element['lon']));
-              uniqueIds.add(id);
-            }
-          }
-        }
-
-        print("✅ Overpass query success. Found ${signals.length} traffic signals.");
-        return signals;
-      } else {
-        print("⚠️ Overpass API error: ${response.statusCode}");
-        return [];
-      }
-    } catch (e) {
-      print("Error connecting to Overpass API: $e");
-      return [];
-    }
-  }
-// In lib/screens/map_screen.dart
-// REPLACE THIS FUNCTION
-
-  Future<void> _fetchAndPlotTrafficSignals(List<LatLng> queryPoints) async {
-
-    // --- STEP 1: Get signals near our downsampled route points ---
-    List<LatLng> signalLocations = await _getOverpassSignalsNearPoints(queryPoints);
-
-    if (signalLocations.isEmpty) {
-      print("--- No signals found on route via (around:) query. ---");
+    // --- STEP 1: Get ALL signals in the box ---
+    List<LatLng> allSignals = await _getOverpassSignalsInBounds(bounds);
+    if (allSignals.isEmpty || routePoints.isEmpty) {
+      print("No signals found in bounds or route is empty.");
       return;
     }
 
-    // --- STEP 2: Plot the signals ---
-    Set<Marker> newSignalMarkers = {};
-    for (int i = 0; i < signalLocations.length; i++) {
-      newSignalMarkers.add(
-        Marker(
-          markerId: MarkerId('signal_$i'),
-          position: signalLocations[i],
-          // --- Using the default yellow marker as requested ---
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-          infoWindow: const InfoWindow(title: 'Traffic Signal'),
-          anchor: const Offset(0.5, 0.5),
-        ),
-      );
+    // --- STEP 2: Filter signals to get only those on the route ---
+    final List<LatLng> filteredSignals = [];
+    const double tolerance = 20.0;
+    for (var signal in allSignals) {
+      bool isOnRoute = false;
+      for (var point in routePoints) {
+        final double distance = Geolocator.distanceBetween(
+          signal.latitude, signal.longitude,
+          point.latitude, point.longitude,
+        );
+        if (distance <= tolerance) {
+          isOnRoute = true;
+          break;
+        }
+      }
+      if (isOnRoute) {
+        filteredSignals.add(signal);
+      }
     }
-    print("✅ Plotting ${newSignalMarkers.length} signals.");
+    print("✅ Filtered complete. Found ${filteredSignals.length} signals ON THE ROUTE.");
+
+    // --- !! NEW !! STEP 3: Cluster the filtered signals ---
+    // We group signals that are within 50m of each other into one junction
+    List<LatLng> junctionCentroids = _clusterSignals(filteredSignals, 50.0);
+
+    // --- STEP 4: Sort the new JUNCTIONS by distance ---
+    List<Map<String, dynamic>> signalsWithDistance = [];
+    for (var junction in junctionCentroids) {
+      double distance = Geolocator.distanceBetween(
+        _sourceLocation!.latitude, _sourceLocation!.longitude,
+        junction.latitude, junction.longitude,
+      );
+      signalsWithDistance.add({'signal': junction, 'distance': distance});
+    }
+    signalsWithDistance.sort((a, b) => a['distance'].compareTo(b['distance']));
+
+    // --- STEP 5: Create sorted list and plot the JUNCTIONS ---
+    _sortedSignalMarkers.clear();
+    _trafficSignalMarkers.clear();
+
+    Set<Marker> newSignalMarkers = {};
+    for (int i = 0; i < signalsWithDistance.length; i++) {
+      final junction = signalsWithDistance[i]['signal'] as LatLng;
+      final marker = Marker(
+        markerId: MarkerId('signal_$i'), // Keep ID format: signal_0, signal_1...
+        position: junction,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed), // Default to RED
+        infoWindow: const InfoWindow(title: 'Traffic Junction'),
+        anchor: const Offset(0.5, 0.5),
+      );
+      _sortedSignalMarkers.add(marker); // Add to sorted LIST
+      newSignalMarkers.add(marker);      // Add to SET for plotting
+    }
 
     setState(() {
       _trafficSignalMarkers.addAll(newSignalMarkers);
     });
   }
+
+
+
+  // In lib/screens/map_screen.dart
+// ADD THESE FOUR NEW FUNCTIONS
+
+  // 1. THIS IS CALLED BY THE "Start Simulation" BUTTON
+  void _startNavigationSimulation() {
+    print("--- STARTING NAVIGATION SIMULATION ---");
+    if (_routePolylinePoints.isEmpty) return;
+
+    // Reset all simulation state
+    _simulationIndex = 0;
+    _lastPassedSignalIndex = -1;
+    _simulationTimer?.cancel();
+
+    setState(() {
+      _markers.clear(); // Clear source/dest markers
+      _isNavigating = true; // This will show the top/bottom nav cards
+      _isPlanningRoute = false;
+    });
+
+    // Zoom to start
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(_sourceLocation!, 17.0),
+    ).then((_) {
+      // Start the timer that moves the arrow
+      _simulationTimer = Timer.periodic(const Duration(milliseconds: 600), (timer) {
+        _onSimulationTick();
+      });
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Starting simulation...')),
+    );
+  }
+
+  // 2. THIS IS THE "HEARTBEAT" OF THE SIMULATION
+  void _onSimulationTick() {
+    // Stop if we've reached the end of the route
+    if (_simulationIndex >= _routePolylinePoints.length - 1) {
+      _simulationTimer?.cancel();
+      _stopNavigation(); // Use your existing stop function to clean up
+      print("--- SIMULATION FINISHED ---");
+      return;
+    }
+
+    // Get current and next position to calculate bearing
+    LatLng currentPos = _routePolylinePoints[_simulationIndex];
+    LatLng nextPos = _routePolylinePoints[_simulationIndex + 1];
+
+    // Calculate bearing (rotation)
+    double bearing = Geolocator.bearingBetween(
+      currentPos.latitude, currentPos.longitude,
+      nextPos.latitude, nextPos.longitude,
+    );
+
+    // Update the map (arrow position, camera, and signals)
+    setState(() {
+      // Animate camera to follow the fake arrow
+      _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: currentPos,
+            zoom: 17.0,
+            bearing: bearing,
+            tilt: 50.0,
+          ),
+        ),
+      );
+
+      // Move the arrow
+      _markers.removeWhere((m) => m.markerId.value == 'user_location');
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('user_location'),
+          position: currentPos,
+          // --- THIS IS THE FIX ---
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure), // Use a built-in blue marker
+          // --- END OF FIX ---
+          rotation: bearing,
+          anchor: const Offset(0.5, 0.5),
+          flat: true,
+          zIndex: 2,
+        ),
+      );
+
+      // --- RUN THE PREEMPTION LOGIC ---
+      _updatePreemptionLogic(currentPos);
+    });
+
+    // Move to the next point on the polyline
+    _simulationIndex++;
+  }
+
+  // 3. THIS IS THE CORE PREEMPTION LOGIC
+// In lib/screens/map_screen.dart
+// REPLACE this function
+// In lib/screens/map_screen.dart
+// ADD THIS NEW HELPER FUNCTION
+
+  List<LatLng> _clusterSignals(List<LatLng> signals, double clusterRadius) {
+    List<LatLng> junctionCentroids = [];
+    Set<int> processedIndices = {};
+
+    print("Clustering ${signals.length} signals...");
+
+    for (int i = 0; i < signals.length; i++) {
+      if (processedIndices.contains(i)) continue;
+
+      List<LatLng> currentCluster = [signals[i]];
+      processedIndices.add(i);
+
+      double avgLat = signals[i].latitude;
+      double avgLng = signals[i].longitude;
+
+      // Find all other signals in this cluster
+      for (int j = i + 1; j < signals.length; j++) {
+        if (processedIndices.contains(j)) continue;
+
+        double distance = Geolocator.distanceBetween(
+          signals[i].latitude, signals[i].longitude,
+          signals[j].latitude, signals[j].longitude,
+        );
+
+        if (distance < clusterRadius) {
+          currentCluster.add(signals[j]);
+          processedIndices.add(j);
+          avgLat += signals[j].latitude;
+          avgLng += signals[j].longitude;
+        }
+      }
+
+      // Calculate the center of the cluster (the junction)
+      avgLat /= currentCluster.length;
+      avgLng /= currentCluster.length;
+      junctionCentroids.add(LatLng(avgLat, avgLng));
+    }
+
+    print("Clustered into ${junctionCentroids.length} junctions.");
+    return junctionCentroids;
+  }
+
+
+// REPLACE this entire function
+
+  void _updatePreemptionLogic(LatLng currentPos) {
+    if (_sortedSignalMarkers.isEmpty) return;
+
+    // --- A. Always keep the next two signals green ---
+    int s1_idx = _lastPassedSignalIndex + 1;
+    _updateSignalIcon(s1_idx, BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen));
+
+    int s2_idx = _lastPassedSignalIndex + 2;
+    _updateSignalIcon(s2_idx, BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen));
+
+    // --- B. Check if we have *passed* the current green signal (s1) ---
+    if (s1_idx < _sortedSignalMarkers.length) {
+      Marker currentGreenSignal = _sortedSignalMarkers[s1_idx];
+      double distanceToCurrent = Geolocator.distanceBetween(
+        currentPos.latitude, currentPos.longitude,
+        currentGreenSignal.position.latitude, currentGreenSignal.position.longitude,
+      );
+
+      // If we are very close to the *current* green signal, it means we are passing it.
+      if (distanceToCurrent < 50) {
+        print("--- PASSING Signal $s1_idx ---");
+
+        // Turn the *previous* signal (the one we've already passed) back to RED.
+        if (_lastPassedSignalIndex >= 0) {
+          _updateSignalIcon(_lastPassedSignalIndex, BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed));
+        }
+
+        // Increment our counter. Now, s1 becomes the "last passed" signal.
+        _lastPassedSignalIndex = s1_idx;
+      }
+    }
+  }
+
+  // 4. THIS IS A HELPER TO UPDATE A MARKER'S ICON
+  void _updateSignalIcon(int index, BitmapDescriptor icon) {
+    if (index >= _sortedSignalMarkers.length) return; // Out of bounds
+
+    String markerId = 'signal_$index';
+
+    // Find the old marker in the main Set
+    Marker? oldMarker = _trafficSignalMarkers
+        .firstWhere((m) => m.markerId.value == markerId, orElse: () => _sortedSignalMarkers[index]);
+
+    // Only update if the icon is different (avoids flicker)
+    if (oldMarker.icon == icon) return;
+
+    // Create the updated marker
+    Marker newMarker = oldMarker.copyWith(
+      iconParam: icon,
+    );
+
+    // Update both our lists
+    _sortedSignalMarkers[index] = newMarker; // Update the sorted list
+    _trafficSignalMarkers.removeWhere((m) => m.markerId.value == markerId); // Update the Set
+    _trafficSignalMarkers.add(newMarker);
+  }
+
   List<LatLng> _decodePolyline(String encoded) {
     List<LatLng> points = [];
     int index = 0, len = encoded.length;
@@ -1260,6 +1456,7 @@ class _MapScreenState extends State<MapScreen> {
     print("Stop Navigation button pressed!");
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
+    _simulationTimer?.cancel(); // <-- ADD THIS LINE
     setState(() {
       _isNavigating = false;
       _navigationStage = 0;
@@ -1320,26 +1517,56 @@ class _MapScreenState extends State<MapScreen> {
             _buildStandbyUI(), // Search bar, FABs, availability
 
           // LAYER 3: Standby "Start Navigation" button
+
+
+          // --- UPDATED: LAYER 3 - NAVIGATION BUTTONS ---
           if (_polylines.isNotEmpty && !_isNavigating && _activeEmergency == null)
             Positioned(
-              bottom: 120, // Adjust position as needed
+              bottom: 120,
               left: 0,
               right: 0,
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 50.0),
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.navigation_rounded),
-                    label: const Text("Start Navigation"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // --- REAL NAVIGATION BUTTON ---
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.navigation_rounded),
+                          label: const Text("Start Nav"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30.0),
+                            ),
+                          ),
+                          onPressed: _startNavigation, // Calls the REAL function
+                        ),
                       ),
-                    ),
-                    onPressed: _startNavigation,
+
+                      const SizedBox(width: 10),
+
+                      // --- SIMULATION BUTTON ---
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.fast_forward_rounded),
+                          label: const Text("Start Sim"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green, // Different color
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30.0),
+                            ),
+                          ),
+                          onPressed: _startNavigationSimulation, // Calls the NEW function
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1558,7 +1785,7 @@ class _MapScreenState extends State<MapScreen> {
           decoration: InputDecoration(
               hintText: 'Choose starting point, or click map',
               border: InputBorder.none,
-              prefixIcon: const Icon(Icons.my_location, color: Colors.blue),
+              prefixIcon: const Icon(Icons.my_location, color: Colors.yellow),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () => setState(() => _isPlanningRoute = false),
