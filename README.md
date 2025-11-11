@@ -45,13 +45,13 @@ The video below demonstrates the core TSP simulation. The ambulance (blue arrow)
 
 | Clustered Junctions | Turn-by-Turn UI |
 | :---: | :---: |
-| ![Multiple signals at an intersection clustered into one marker](https_placeholder.com/path/to/your/image_545053.png) |
+| ![Multiple signals at an intersection clustered into one marker] |
 <img width="276" height="576" alt="Turn-by-turn UI" src="https://github.com/user-attachments/assets/1c25008f-5e72-4c40-99d9-943e4f3a788f"> |
 
 | Admin & Dispatch | Driver Approval | Public User Report |
 | :---: | :---: | :---: |
-| ![Platform Admin dashboard with unassigned emergencies](https_placeholder.com/path/to/your/admin_dash.jpg) | 
-![Driver Approval Screen](https://github.com/user-attachments/assets/9a4dea30-3648-40df-9279-91abcd43934c) | 
+| ![Platform Admin dashboard with unassigned emergencies] | 
+![Driver Approval Screen] | 
 ![Public User Report Screen](https://github.com/user-attachments/assets/0d7437a6-f0e8-415e-be90-7748f57371bd) |
 
 ## 💻 Tech Stack
