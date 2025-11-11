@@ -5,6 +5,13 @@ This project is a full-stack, real-time platform designed to reduce emergency re
 The system is built with a **Flutter** mobile application for drivers and a **Node.js (Express)** backend for dispatch, authentication, and real-time socket communication.
 
 ---
+## 📱 Get the App
+
+You can download and test the pre-release APK for Android directly:
+
+[**Download the APK (v1.0)**](https://drive.google.com/file/d/1CCrepvagQWmIRCfveNUg1BrXGJULgb_D/view?usp=sharing)
+
+---
 
 ## ✨ Features
 
