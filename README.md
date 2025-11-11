@@ -50,8 +50,8 @@ The video below demonstrates the core TSP simulation. The ambulance (blue arrow)
 
 | Admin & Dispatch | Driver Approval | Public User Report |
 | :---: | :---: | :---: |
-| ![Platform Admin dashboard with unassigned emergencies] | 
-![Driver Approval Screen] | 
+| ![Platform Admin dashboard with unassigned emergencies](https_placeholder.com/path/to/your/admin_dash.jpg) | 
+![Driver Approval Screen](https://github.com/user-attachments/assets/9a4dea30-3648-40df-9279-91abcd43934c) | 
 ![Public User Report Screen](https://github.com/user-attachments/assets/0d7437a6-f0e8-415e-be90-7748f57371bd) |
 
 ## 💻 Tech Stack
