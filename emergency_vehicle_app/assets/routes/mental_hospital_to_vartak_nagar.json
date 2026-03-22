@@ -1,0 +1,101 @@
+{
+  "routes": [
+    {
+      "distanceMeters": 4100,
+      "duration": "720s",
+      "polyline": {
+        "encodedPolyline": "kf|tA_e|{MaAp@aAp@aAp@aAp@aAp@aAp@"
+      },
+      "legs": [
+        {
+          "steps": [
+            {
+              "navigationInstruction": {
+                "maneuver": "START",
+                "instructions": "Start from Mental Hospital Thane"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.18046540081282,
+                  "longitude": 72.96180522964553
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Head north through internal road"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.18206510129673,
+                  "longitude": 72.96216380900674
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Continue towards main road"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.185514424485902,
+                  "longitude": 72.96071691199097
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Proceed via Thane internal connector road"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.196639642713876,
+                  "longitude": 72.9623194810224
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Continue towards Vartak Nagar"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.204646969770835,
+                  "longitude": 72.96853008799678
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "TURN_LEFT",
+                "instructions": "Turn towards Vartak Nagar road"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.209738408091724,
+                  "longitude": 72.96228911054419
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "ARRIVE",
+                "instructions": "Arrive at Vartak Nagar Thane"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.213160371937306,
+                  "longitude": 72.9627932151638
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

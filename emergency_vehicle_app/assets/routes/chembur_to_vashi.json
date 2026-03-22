@@ -1,0 +1,77 @@
+{
+  "routes": [
+    {
+      "distanceMeters": 3200,
+      "duration": "480s",
+      "polyline": {
+        "encodedPolyline": "u~seAm|u{MoAp@_Ar@mAp@uAp@mAp@"
+      },
+      "legs": [
+        {
+          "steps": [
+            {
+              "navigationInstruction": {
+                "maneuver": "START",
+                "instructions": "Start from Chembur"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.04672131042527,
+                  "longitude": 72.89341696229897
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Continue towards Vashi via main route"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.045459633780467,
+                  "longitude": 72.89344698232313
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Follow road through Navi Mumbai corridor"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.04824300452644,
+                  "longitude": 72.92916433009125
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Proceed towards Vashi"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.06426626925655,
+                  "longitude": 72.98124293873147
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "ARRIVE",
+                "instructions": "Arrive at Vashi"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.074552209257718,
+                  "longitude": 72.99786447578589
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

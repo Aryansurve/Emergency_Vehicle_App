@@ -1,0 +1,77 @@
+{
+  "routes": [
+    {
+      "distanceMeters": 2500,
+      "duration": "420s",
+      "polyline": {
+        "encodedPolyline": "i_~teAmv|{Mo@yCsAsEqBeHeBcHs@yCs@yC"
+      },
+      "legs": [
+        {
+          "steps": [
+            {
+              "navigationInstruction": {
+                "maneuver": "START",
+                "instructions": "Start from Chembur"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.06506975207637,
+                  "longitude": 72.88079678584057
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Head towards Kurla via internal roads"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.06214336535656,
+                  "longitude": 72.88343802267121
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Continue along main road"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.056347844475482,
+                  "longitude": 72.88773814026982
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "STRAIGHT",
+                "instructions": "Proceed towards Kurla"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.05393925674889,
+                  "longitude": 72.89454665980048
+                }
+              }
+            },
+            {
+              "navigationInstruction": {
+                "maneuver": "ARRIVE",
+                "instructions": "Arrive at Kurla"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 19.053374742357207,
+                  "longitude": 72.89717450264484
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

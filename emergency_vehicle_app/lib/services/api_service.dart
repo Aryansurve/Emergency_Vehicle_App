@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:http_parser/http_parser.dart';
 class ApiService {
   // --- CONFIGURATION ---
-  static const String _baseUrl = "http://192.168.0.128:5000/api/v1";
+  static const String _baseUrl = "http://192.168.0.127:5000/api/v1";
   //static const String _baseUrl = "https://emergency-vehicle-app.onrender.com/api/v1";
 
   // --- HELPER METHODS ---
@@ -328,6 +328,35 @@ class ApiService {
     }
   }
 
+
+  static Future<Map<String, dynamic>> uploadRTOVideo(String filePath, String emergencyId) async {
+    try {
+      final url = _buildUri('/rto/upload-video');
+      var request = http.MultipartRequest('POST', url);
+
+      // --- ADD THESE THREE LINES ---
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('jwt_token');
+      request.headers.addAll({
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+      // ----------------------------
+
+      request.fields['emergencyId'] = emergencyId;
+      request.files.add(await http.MultipartFile.fromPath(
+        'video',
+        filePath,
+        contentType: MediaType('video', 'mp4'),
+      ));
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Network error during upload'};
+    }
+  }
   static Future<Map<String, dynamic>> getActiveEmergency() async {
     try {
       final response = await http.get(
