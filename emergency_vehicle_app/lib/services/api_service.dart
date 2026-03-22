@@ -4,8 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http_parser/http_parser.dart';
 class ApiService {
   // --- CONFIGURATION ---
-  static const String _baseUrl = "http://192.168.0.127:5000/api/v1";
-  //static const String _baseUrl = "https://emergency-vehicle-app.onrender.com/api/v1";
+  //static const String _baseUrl = "http://192.168.0.127:5000/api/v1";
+  static const String _baseUrl = "https://emergency-vehicle-app.onrender.com/api/v1";
 
   // --- HELPER METHODS ---
   static Uri _buildUri(String path) => Uri.parse(_baseUrl + path);
@@ -29,7 +29,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.put(
-        _buildUri('/driver/hardware-preemption'),
+        _buildUri('/hardware/hardware-preemption'),
         headers: await _getHeaders(needsAuth: true),
         body: jsonEncode({
           'isPreemptionActive': isActive,

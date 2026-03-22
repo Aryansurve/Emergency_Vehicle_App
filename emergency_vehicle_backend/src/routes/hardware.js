@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const Preemption = require('../models/Preemption');
-const auth = require('../middleware/auth'); // Your JWT middleware
+
+// Use the exact filename from your image: authMiddleware
+const { protect } = require('../middleware/authMiddleware'); 
 
 // --- UPDATE STATUS (Called by Flutter) ---
-router.put('/hardware-preemption', auth, async (req, res) => {
+router.put('/hardware-preemption', protect, async (req, res) => {
     try {
         const { isPreemptionActive, targetLane, emergencyId } = req.body;
 
-        // Upsert: true means it updates the one existing doc, or creates it if empty
         const status = await Preemption.findOneAndUpdate(
             {}, 
             { 
@@ -26,7 +27,7 @@ router.put('/hardware-preemption', auth, async (req, res) => {
     }
 });
 
-// --- FETCH STATUS (This is what the hardware will eventually call) ---
+// --- FETCH STATUS (Polled by Raspberry Pi) ---
 router.get('/hardware-status', async (req, res) => {
     try {
         const status = await Preemption.findOne({});

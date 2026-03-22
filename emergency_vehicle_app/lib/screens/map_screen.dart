@@ -1551,7 +1551,7 @@ class _MapScreenState extends State<MapScreen> {
         lane: 1,
         emergencyId: currentId
     ).then((res) => print("Hardware Reset: ${res['success']}"));
-    
+
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
     _simulationTimer?.cancel(); // <-- ADD THIS LINE

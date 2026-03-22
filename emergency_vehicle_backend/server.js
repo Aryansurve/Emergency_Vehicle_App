@@ -9,6 +9,7 @@ const hospitalAdminRoutes = require("./src/routes/hospitalAdminRoutes");
 const driverRoutes = require("./src/routes/driverRoutes"); // <-- ADD THIS LINE
 const publicRoutes = require("./src/routes/publicRoutes"); // <-- ADD THIS LINE
 const rtoRoutes = require("./src/routes/rtoRoutes");
+const hardwareRoutes = require("./src/routes/hardware"); // Make sure this path is correct!
 
 // ... app setup
 
@@ -32,7 +33,7 @@ app.use("/api/v1/hospitals", hospitalRoutes);
 app.use("/api/v1/hospital-admin", hospitalAdminRoutes);
 app.use("/api/v1/driver", driverRoutes); // Corrected from '/vli'
 app.use("/api/v1/public", publicRoutes); // <-- ADD THIS LINE
-
+app.use("/api/v1/hardware", hardwareRoutes); // This creates the /api/v1/hardware/status path
 // Test route
 app.get("/", (req, res) => {
   res.send("API is running...");
