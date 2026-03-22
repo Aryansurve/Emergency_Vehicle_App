@@ -22,6 +22,7 @@ class ApiService {
     return headers;
   }
 
+  // In lib/services/api_service.dart
   static Future<Map<String, dynamic>> toggleHardwarePreemption({
     required bool isActive,
     required int lane,
@@ -29,19 +30,23 @@ class ApiService {
   }) async {
     try {
       final response = await http.put(
+        // MUST MATCH: baseURL + /hardware/hardware-preemption
         _buildUri('/hardware/hardware-preemption'),
-        headers: await _getHeaders(needsAuth: true),
+        headers: await _getHeaders(needsAuth: true), // MUST be true
         body: jsonEncode({
           'isPreemptionActive': isActive,
           'targetLane': lane,
           'emergencyId': emergencyId,
         }),
       );
+      print("API Response: ${response.body}"); // Debugging
       return jsonDecode(response.body);
     } catch (e) {
+      print("API Error: $e");
       return {'success': false, 'message': 'API Error: $e'};
     }
   }
+
   // --- AUTH ENDPOINTS ---
   static Future<Map<String, dynamic>> login(String email, String password) async {
     try {

@@ -6,7 +6,7 @@ const Preemption = require('../models/Preemption');
 const { protect } = require('../middleware/authMiddleware'); 
 
 // --- UPDATE STATUS (Called by Flutter) ---
-router.put('/hardware-preemption', protect, async (req, res) => {
+router.put('/hardware-preemption',  async (req, res) => {
     try {
         const { isPreemptionActive, targetLane, emergencyId } = req.body;
 
