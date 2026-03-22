@@ -22,6 +22,26 @@ class ApiService {
     return headers;
   }
 
+  static Future<Map<String, dynamic>> toggleHardwarePreemption({
+    required bool isActive,
+    required int lane,
+    required String emergencyId
+  }) async {
+    try {
+      final response = await http.put(
+        _buildUri('/driver/hardware-preemption'),
+        headers: await _getHeaders(needsAuth: true),
+        body: jsonEncode({
+          'isPreemptionActive': isActive,
+          'targetLane': lane,
+          'emergencyId': emergencyId,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'API Error: $e'};
+    }
+  }
   // --- AUTH ENDPOINTS ---
   static Future<Map<String, dynamic>> login(String email, String password) async {
     try {

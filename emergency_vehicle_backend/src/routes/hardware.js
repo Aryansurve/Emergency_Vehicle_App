@@ -1,0 +1,39 @@
+const express = require('express');
+const router = express.Router();
+const Preemption = require('../models/Preemption');
+const auth = require('../middleware/auth'); // Your JWT middleware
+
+// --- UPDATE STATUS (Called by Flutter) ---
+router.put('/hardware-preemption', auth, async (req, res) => {
+    try {
+        const { isPreemptionActive, targetLane, emergencyId } = req.body;
+
+        // Upsert: true means it updates the one existing doc, or creates it if empty
+        const status = await Preemption.findOneAndUpdate(
+            {}, 
+            { 
+                isPreemptionActive, 
+                targetLane, 
+                emergencyId,
+                updatedAt: Date.now() 
+            },
+            { upsert: true, new: true }
+        );
+
+        res.json({ success: true, data: status });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// --- FETCH STATUS (This is what the hardware will eventually call) ---
+router.get('/hardware-status', async (req, res) => {
+    try {
+        const status = await Preemption.findOne({});
+        res.json(status || { isPreemptionActive: false, targetLane: 1 });
+    } catch (e) {
+        res.status(500).json({ error: "Server Error" });
+    }
+});
+
+module.exports = router;

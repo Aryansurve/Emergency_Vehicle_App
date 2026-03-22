@@ -846,6 +846,16 @@ class _MapScreenState extends State<MapScreen> {
   void _startNavigationSimulation() {
     print("--- STARTING NAVIGATION SIMULATION ---");
 
+    // 1. Get current Emergency ID
+    String currentId = _activeEmergency?['_id'] ?? "simulated_id_123";
+
+    // 2. Trigger the Backend Flag
+    ApiService.toggleHardwarePreemption(
+        isActive: true,
+        lane: 1, // You can change this based on the route logic later
+        emergencyId: currentId
+    ).then((res) => print("Hardware Triggered: ${res['success']}"));
+
     if (_socket == null) {
       print("❌ ERROR: _socket is NULL");
     } else if (!_socket!.connected) {
@@ -1531,6 +1541,17 @@ class _MapScreenState extends State<MapScreen> {
   }
   void _stopNavigation() {
     print("Stop Navigation button pressed!");
+
+    // 1. Get ID
+    String currentId = _activeEmergency?['_id'] ?? "simulated_id_123";
+
+    // 2. Reset the Backend Flag
+    ApiService.toggleHardwarePreemption(
+        isActive: false,
+        lane: 1,
+        emergencyId: currentId
+    ).then((res) => print("Hardware Reset: ${res['success']}"));
+    
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
     _simulationTimer?.cancel(); // <-- ADD THIS LINE

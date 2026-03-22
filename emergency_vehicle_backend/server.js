@@ -9,6 +9,7 @@ const hospitalAdminRoutes = require("./src/routes/hospitalAdminRoutes");
 const driverRoutes = require("./src/routes/driverRoutes"); // <-- ADD THIS LINE
 const publicRoutes = require("./src/routes/publicRoutes"); // <-- ADD THIS LINE
 const rtoRoutes = require("./src/routes/rtoRoutes");
+
 // ... app setup
 
 // Routes
